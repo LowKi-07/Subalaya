@@ -734,9 +734,9 @@ const $ = (id) => document.getElementById(id);
 let currentView = 'first';
 function setMode(m) {
   mode = m; $('bMode').textContent = m === 'walk' ? 'Overview' : 'Walk'; $('bMode').classList.toggle('on', m !== 'walk');
-  orbit.enabled = m !== 'walk'; $('views').style.display = m === 'walk' ? 'none' : 'flex';
+  orbit.enabled = m !== 'walk'; document.body.classList.toggle('overview', m !== 'walk'); $('views').style.display = m === 'walk' ? 'none' : 'flex';
   joy.style.display = isTouch && m === 'walk' ? 'block' : 'none';
-  if (m === 'overview') { camera.position.set(orbit.target.x + 55, 75, orbit.target.z + 70); setView(currentView); }
+  if (m === 'overview') { const k = camera.aspect < 1 ? 0.95 : 0.72; camera.position.set(orbit.target.x + 40 * k, 80 * k, orbit.target.z + 55 * k); setView(currentView); }
   else { setView(null); }
 }
 function setView(v) {
@@ -801,8 +801,17 @@ function drawMap() {
 }
 
 // ---------------------------------------------------------------- loop
-function resize() { const w = innerWidth, h = innerHeight; renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix(); }
-addEventListener('resize', resize); resize();
+function resize() {
+  const w = innerWidth, h = innerHeight, aspect = w / h;
+  renderer.setSize(w, h, false); camera.aspect = aspect;
+  // landscape: 70° vertical. Portrait: hold ~78° horizontal so rooms don't feel like a keyhole.
+  const hfov = THREE.MathUtils.degToRad(78);
+  camera.fov = aspect >= 1 ? 70 : Math.min(100, THREE.MathUtils.radToDeg(2 * Math.atan(Math.tan(hfov / 2) / aspect)));
+  camera.updateProjectionMatrix();
+}
+addEventListener('resize', resize); addEventListener('orientationchange', () => setTimeout(resize, 200)); resize();
+// stop iOS Safari pinch-zoom / double-tap zoom from scaling the page UI
+for (const ev of ['gesturestart', 'gesturechange', 'dblclick']) document.addEventListener(ev, (e) => e.preventDefault(), { passive: false });
 const clock = new THREE.Clock();
 let lightT = 0, lastRoom = '';
 function currentRoom() {

@@ -35,8 +35,38 @@
   #plan img { max-width: 100%; max-height: 100%; background: #fff; border-radius: 8px; }
   #plan button { position: absolute; top: calc(12px + env(safe-area-inset-top)); right: 12px; }
   #loading { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: #0f1720; z-index: 9; font-size: 16px; color: var(--muted); }
-  @media (pointer: coarse) { #help { display: none; } }
-  @media (max-width: 520px) { #map canvas { width: 84px !important; height: auto !important; } }
+  #top { left: max(10px, env(safe-area-inset-left)); right: max(10px, env(safe-area-inset-right)); }
+  #views { left: max(10px, env(safe-area-inset-left)); }
+  #rooms { right: max(10px, env(safe-area-inset-right)); z-index: 4; }
+  #map { right: max(10px, env(safe-area-inset-right)); }
+  #joy { left: max(22px, calc(env(safe-area-inset-left) + 12px)); }
+  body.overview #map { display: none; }
+  @media (pointer: coarse) {
+    #help { display: none; }
+    button { min-height: 44px; }
+    /* overview floor switch becomes a bottom segmented bar on phones */
+    #views { top: auto; left: 50%; transform: translateX(-50%); bottom: calc(14px + env(safe-area-inset-bottom)); flex-direction: row; }
+    #views button { padding: 0 14px; white-space: nowrap; }
+  }
+  /* phones in portrait: info panel on top, buttons in one even row underneath */
+  @media (max-width: 600px) {
+    #top { flex-direction: column; align-items: stretch; gap: 6px; }
+    #where { max-width: none; align-self: flex-start; padding: 6px 10px; }
+    #where b { font-size: 14px; }
+    #btns { max-width: none; width: 100%; flex-wrap: nowrap; margin-left: 0; gap: 5px; }
+    #btns button { flex: 1 1 0; min-width: 0; padding: 0 4px; font-size: 13px; }
+    #rooms { top: calc(124px + env(safe-area-inset-top)); max-height: calc(100% - 124px - 150px - env(safe-area-inset-top) - env(safe-area-inset-bottom)); }
+    #map canvas { width: 66px !important; height: auto !important; }
+    #map { padding: 4px; }
+  }
+  /* phones in landscape: short screen */
+  @media (max-height: 500px) {
+    #map canvas { height: 38vh !important; width: auto !important; }
+    #rooms { top: calc(60px + env(safe-area-inset-top)); max-height: calc(100% - 72px - env(safe-area-inset-top) - env(safe-area-inset-bottom)); }
+    #joy { width: 108px; height: 108px; bottom: calc(16px + env(safe-area-inset-bottom)); }
+    #knob { left: 29px; top: 29px; }
+    #where { padding: 6px 10px; }
+  }
 </style>
 <script type="importmap">{ "imports": { "three": "./vendor/three.module.min.js" } }</script>
 </head>
