@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#0f1720">
+<title>House Walkthrough</title>
+<style>
+  :root { --panel: rgba(15, 23, 32, 0.78); --line: rgba(255,255,255,0.14); --fg: #f3f1ec; --muted: #a9b3bd; --accent: #f2b45a; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #0f1720; color: var(--fg);
+    font: 14px/1.35 system-ui, -apple-system, "Segoe UI", sans-serif; -webkit-user-select: none; user-select: none; touch-action: none; }
+  canvas#c { position: fixed; inset: 0; width: 100%; height: 100%; display: block; outline: none; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
+  #top { position: fixed; top: calc(10px + env(safe-area-inset-top)); left: 10px; right: 10px; display: flex; gap: 8px; align-items: flex-start; pointer-events: none; }
+  #where { padding: 8px 12px; pointer-events: auto; max-width: 46vw; }
+  #where b { display: block; font-size: 15px; }
+  #where span { color: var(--muted); font-size: 12px; }
+  #btns { margin-left: auto; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; pointer-events: auto; max-width: 54vw; }
+  button { font: inherit; color: var(--fg); background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+    min-height: 40px; padding: 0 12px; cursor: pointer; backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
+  button.on { border-color: var(--accent); color: var(--accent); }
+  #rooms { position: fixed; top: calc(64px + env(safe-area-inset-top)); right: 10px; width: min(300px, calc(100vw - 20px)); max-height: 70vh; overflow: auto; padding: 8px; display: none; }
+  #rooms h4 { margin: 8px 6px 4px; color: var(--muted); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; }
+  #rooms button { display: block; width: 100%; text-align: left; margin: 3px 0; min-height: 38px; }
+  #rooms small { color: var(--muted); float: right; }
+  #views { position: fixed; top: calc(76px + env(safe-area-inset-top)); left: 10px; display: none; gap: 6px; flex-direction: column; }
+  #map { position: fixed; right: 10px; bottom: calc(10px + env(safe-area-inset-bottom)); padding: 6px; }
+  #map canvas { display: block; }
+  #help { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(12px + env(safe-area-inset-bottom)); padding: 7px 12px; color: var(--muted); font-size: 12px; white-space: nowrap; }
+  #joy { position: fixed; left: 22px; bottom: calc(26px + env(safe-area-inset-bottom)); width: 124px; height: 124px; border-radius: 50%;
+    background: rgba(15,23,32,.45); border: 1px solid var(--line); display: none; touch-action: none; }
+  #knob { position: absolute; left: 37px; top: 37px; width: 50px; height: 50px; border-radius: 50%; background: rgba(255,255,255,.35); }
+  #plan { position: fixed; inset: 0; background: rgba(8,12,18,.92); display: none; align-items: center; justify-content: center; padding: 16px; z-index: 5; }
+  #plan img { max-width: 100%; max-height: 100%; background: #fff; border-radius: 8px; }
+  #plan button { position: absolute; top: calc(12px + env(safe-area-inset-top)); right: 12px; }
+  #loading { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: #0f1720; z-index: 9; font-size: 16px; color: var(--muted); }
+  @media (pointer: coarse) { #help { display: none; } }
+  @media (max-width: 520px) { #map canvas { width: 84px !important; height: auto !important; } }
+</style>
+<script type="importmap">{ "imports": { "three": "./vendor/three.module.min.js" } }</script>
+</head>
+<body>
+<canvas id="c" tabindex="0"></canvas>
+<div id="loading">Building the house…</div>
+<div id="top">
+  <div id="where" class="panel"><b id="roomName">Parking</b><span id="floorName">Ground floor</span></div>
+  <div id="btns">
+    <button id="bMode">Overview</button>
+    <button id="bRooms">Rooms</button>
+    <button id="bNight">Night</button>
+    <button id="bMap" class="on">Map</button>
+    <button id="bPlan">Plan</button>
+  </div>
+</div>
+<div id="views">
+  <button data-v="exterior">Exterior</button>
+  <button data-v="first">First floor</button>
+  <button data-v="ground">Ground floor</button>
+</div>
+<div id="rooms" class="panel"></div>
+<div id="map" class="panel"><canvas id="mapc" width="120" height="250"></canvas></div>
+<div id="help" class="panel">WASD / arrows to walk · drag to look · Shift to run · take the stairs beside the parking to go up</div>
+<div id="joy"><div id="knob"></div></div>
+<div id="plan"><img src="./plan-reference.png" alt="Reference floor plan"><button id="bPlanClose">Close</button></div>
+<script type="module" src="./main.js"></script>
+</body>
+</html>
