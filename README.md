@@ -34,9 +34,18 @@ Then open http://localhost:8000. To deploy, import the repo into Vercel or Netli
 
 Static meshes are merged by material at load time, which brings it to about 150 draw calls so it runs smoothly on phones. Ambient occlusion (GTAO) and anti-aliasing run as a post-processing pass. Add `?noao` to the URL to turn ambient occlusion off on slow devices, or `?lowq` for smaller shadow maps.
 
+## Assets
+
+Scanned models, floor textures and the sky photo are from [Poly Haven](https://polyhaven.com) (CC0, free to use). They're packed to GLB with meshopt and WebP textures in `models/`, with the floor textures and HDR sky in `textures/`:
+
+- Models: modern_arm_chair_01, side_table_01, modern_wooden_cabinet, ceramic_vase_01, ceramic_vase_03, ceiling_fan, modern_ceiling_lamp_01, mid_century_lounge_chair, potted_plant_02, potted_plant_04, coffee_table_round_01, dining_chair_02, round_wooden_table_02.
+- Textures: wood_floor, marble_01.
+- Sky: kloofendal_48d_partly_cloudy_puresky (2K HDR).
+
 ## Assumptions (not in the plan)
 
 - Heights: 10 ft floor to floor, 7 ft doors, windows from 3 ft to 7 ft.
 - Furniture styles, materials and colours are generic. No interior photos were available.
 - The study's doorway, the parking columns and beams, and the gates are inferred.
-- There is no stair up to the roof terrace.
+- The stairs continue to a roof terrace with a stair room and a clothes-drying shed. These aren't on the plan.
+- Kitchens are semi-open, with a serving hatch and a doorway to the living hall.
