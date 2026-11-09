@@ -5,6 +5,8 @@ An interactive 3D walkthrough of a two-storey house, built with Three.js from th
 - **Ground floor:** kitchen, living hall, master bedroom with attached toilet, bedroom with toilet, a 3-car parking area and a dog-leg staircase.
 - **First floor:** two flats (A and B), plus a lobby, a passage and a study.
 
+**Live:** https://subalaya.vercel.app. Every push to `main` deploys there automatically.
+
 ## Run it
 
 It's a static site with no build step. Serve the folder over HTTP, because ES modules don't load from `file://`:
