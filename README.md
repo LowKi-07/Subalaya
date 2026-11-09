@@ -23,9 +23,14 @@ Then open http://localhost:8000. To deploy, import the repo into Vercel or Netli
 
 ## Files
 
-- `main.js` builds the whole scene. Walls, doors and windows are `wall(...)` calls in the plan image's pixel coordinates, at 17.2 px per foot. The first-floor plan is offset 665 px to the right in the image.
+- `main.js` builds the house, the furniture and the lighting, and handles controls. Walls, doors and windows are `wall(...)` calls in the plan image's pixel coordinates, at 17.2 px per foot. The first-floor plan is offset 665 px to the right in the image.
+- `cars.js` builds the procedural cars: an extruded body with wheel arches, clearcoat paint, alloys and lights.
+- `houses.js` builds the neighbouring houses, trees and street lights.
+- `sky.js` paints the day and night skies, which also serve as reflections.
 - `index.html` holds the page and its controls.
-- `vendor/` holds Three.js r170 (MIT, see `vendor/THREE-LICENSE`).
+- `vendor/` holds Three.js r170 and a few of its add-ons (MIT, see `vendor/THREE-LICENSE`).
+
+Static meshes are merged by material at load time, which brings it to about 150 draw calls so it runs smoothly on phones. Add `?lowq` to the URL for smaller shadow maps.
 
 ## Assumptions (not in the plan)
 

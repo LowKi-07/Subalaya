@@ -1,9 +1,15 @@
-// Interactive 3D walkthrough of the two-storey house in plan-reference.png.
+// Subalaya: interactive 3D walkthrough of the two-storey house in plan-reference.png.
 // Units: 1 world unit = 1 foot. Layout coordinates are taken directly from the
 // reference image (pixels) and converted with X()/Z(), so the geometry stays
 // traceable to the drawing. The first-floor plan sits 665px to the right.
 import * as THREE from 'three';
 import { OrbitControls } from './vendor/OrbitControls.js';
+import { RoundedBoxGeometry } from './vendor/RoundedBoxGeometry.js';
+import { RoomEnvironment } from './vendor/RoomEnvironment.js';
+import { paintSky } from './sky.js';
+import { makeCar } from './cars.js';
+import { buildNeighbourhood, tree, streetLight } from './houses.js';
+import { mergeGeometries } from './vendor/BufferGeometryUtils.js';
 
 const PX = 17.2;            // image pixels per foot (10'2" living hall ≈ 175px)
 const FH = 10;              // floor-to-floor height
@@ -21,20 +27,28 @@ const rnd = () => { seed = (seed + 0x6D2B79F5) | 0; let t = Math.imul(seed ^ (se
 // ---------------------------------------------------------------- renderer
 const canvas = document.getElementById('c');
 const isTouch = matchMedia('(pointer: coarse)').matches;
+const LOWQ = new URLSearchParams(location.search).has('lowq');
 let renderer;
 try { renderer = new THREE.WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true }); }
 catch (e) { document.getElementById('loading').textContent = 'WebGL is not available in this browser.'; throw e; }
 renderer.setPixelRatio(Math.min(devicePixelRatio, isTouch ? 1.5 : 2));
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.05;
+renderer.toneMapping = THREE.AgXToneMapping;
+renderer.toneMappingExposure = 1.3;
 
 const scene = new THREE.Scene();
-const DAY_SKY = new THREE.Color(0xb9d3ea), NIGHT_SKY = new THREE.Color(0x0b1424);
-scene.background = DAY_SKY.clone();
-scene.fog = new THREE.Fog(0xb9d3ea, 140, 420);
-const camera = new THREE.PerspectiveCamera(72, 1, 0.1, 1200);
+const pmrem = new THREE.PMREMGenerator(renderer);
+const daySky = paintSky(), nightSky = paintSky({ night: true });
+const skyEnv = pmrem.fromEquirectangular(daySky).texture;          // reflections for cars and glass
+const roomEnv = pmrem.fromScene(new RoomEnvironment(), 0.04).texture; // soft studio fill for interiors
+scene.background = daySky;
+scene.environment = roomEnv;
+scene.environmentIntensity = 0.7;
+scene.backgroundIntensity = 1;
+const HORIZON = new THREE.Color(0xd5e4f1), NIGHT_FOG = new THREE.Color(0x1a2233);
+scene.fog = new THREE.Fog(HORIZON.clone(), 160, 520);
+const camera = new THREE.PerspectiveCamera(72, 1, 0.1, 1500);
 camera.rotation.order = 'YXZ';
 
 // ---------------------------------------------------------------- textures
@@ -47,110 +61,116 @@ function makeTex(draw, size = 512) {
   return t;
 }
 function speckle(g, s, n, color) { g.fillStyle = color; for (let i = 0; i < n; i++) g.fillRect(rnd() * s, rnd() * s, 1 + rnd() * 2, 1 + rnd() * 2); }
+function grid(g, s, n, color, w) { g.strokeStyle = color; g.lineWidth = w; for (let k = 0; k <= n; k++) { const p = (k * s) / n; g.beginPath(); g.moveTo(p, 0); g.lineTo(p, s); g.moveTo(0, p); g.lineTo(s, p); g.stroke(); } }
 const TEX = {
-  wood: makeTex((g, s) => { // 4ft square, 6" planks
-    const pw = s / 8;
-    for (let i = 0; i < 8; i++) {
-      let y = -rnd() * s * 0.6;
+  oak: makeTex((g, s) => { // light oak planks, 4ft square, 7" boards
+    const n = 7, pw = s / n;
+    for (let i = 0; i < n; i++) {
+      let y = -rnd() * s * 0.7;
       while (y < s) {
-        const len = s * (0.35 + rnd() * 0.45);
-        g.fillStyle = `hsl(${26 + rnd() * 6},${40 + rnd() * 12}%,${34 + rnd() * 12}%)`;
+        const len = s * (0.45 + rnd() * 0.5);
+        g.fillStyle = `hsl(${31 + rnd() * 5},${38 + rnd() * 10}%,${66 + rnd() * 9}%)`;
         g.fillRect(i * pw, y, pw, len);
-        g.strokeStyle = 'rgba(50,25,8,0.16)';
-        for (let k = 0; k < 7; k++) { const xx = i * pw + rnd() * pw; g.beginPath(); g.moveTo(xx, y); g.bezierCurveTo(xx + rnd() * 6 - 3, y + len / 3, xx + rnd() * 6 - 3, y + len * 0.66, xx + rnd() * 4 - 2, y + len); g.stroke(); }
-        g.fillStyle = 'rgba(35,18,5,0.6)'; g.fillRect(i * pw, y, pw, 1.5);
+        for (let k = 0; k < 14; k++) {
+          g.strokeStyle = `rgba(140,95,55,${0.05 + rnd() * 0.08})`; g.lineWidth = 0.6 + rnd();
+          const xx = i * pw + rnd() * pw; g.beginPath(); g.moveTo(xx, y);
+          g.bezierCurveTo(xx + rnd() * 8 - 4, y + len / 3, xx + rnd() * 8 - 4, y + len * 0.66, xx + rnd() * 5 - 2.5, y + len); g.stroke();
+        }
+        g.fillStyle = 'rgba(110,75,45,0.35)'; g.fillRect(i * pw, y, pw, 1.2);
         y += len;
       }
-      g.fillStyle = 'rgba(35,18,5,0.55)'; g.fillRect(i * pw, 0, 1.5, s);
+      g.fillStyle = 'rgba(110,75,45,0.3)'; g.fillRect(i * pw, 0, 1.2, s);
     }
   }),
-  marble: makeTex((g, s) => { // 4ft square, 2x2ft vitrified tiles
+  marble: makeTex((g, s) => { // 4ft square, 2x2ft light marble-look tiles
     const h = s / 2;
     for (let ty = 0; ty < 2; ty++) for (let tx = 0; tx < 2; tx++) {
       const x0 = tx * h, y0 = ty * h;
       g.save(); g.beginPath(); g.rect(x0, y0, h, h); g.clip();
-      g.fillStyle = `hsl(40,18%,${88 + rnd() * 4}%)`; g.fillRect(x0, y0, h, h);
-      for (let v = 0; v < 6; v++) {
-        g.strokeStyle = `rgba(125,112,98,${0.07 + rnd() * 0.12})`; g.lineWidth = 0.5 + rnd() * 1.6;
+      g.fillStyle = `hsl(36,16%,${91 + rnd() * 3}%)`; g.fillRect(x0, y0, h, h);
+      for (let v = 0; v < 5; v++) {
+        g.strokeStyle = `rgba(150,138,122,${0.05 + rnd() * 0.09})`; g.lineWidth = 0.5 + rnd() * 1.4;
         g.beginPath(); let px = x0 + rnd() * h, py = y0 - 10; g.moveTo(px, py);
         for (let k = 0; k < 10; k++) { px += (rnd() - 0.5) * 36; py += h / 8; g.lineTo(px, py); }
         g.stroke();
       }
       g.restore();
     }
-    g.strokeStyle = '#c4bcae'; g.lineWidth = 2;
-    for (let k = 0; k <= 2; k++) { g.beginPath(); g.moveTo(k * h, 0); g.lineTo(k * h, s); g.moveTo(0, k * h); g.lineTo(s, k * h); g.stroke(); }
+    grid(g, s, 2, '#d8d1c6', 1.5);
   }),
-  ktile: makeTex((g, s) => { // 4ft square, 2x2ft beige tiles
+  ktile: makeTex((g, s) => { // 4ft square, 2x2ft warm grey matte tiles
     const h = s / 2;
-    for (let ty = 0; ty < 2; ty++) for (let tx = 0; tx < 2; tx++) { g.fillStyle = `hsl(35,28%,${74 + rnd() * 5}%)`; g.fillRect(tx * h, ty * h, h, h); }
-    speckle(g, s, 2500, 'rgba(90,70,50,0.12)');
-    g.strokeStyle = '#8f8270'; g.lineWidth = 2;
-    for (let k = 0; k <= 2; k++) { g.beginPath(); g.moveTo(k * h, 0); g.lineTo(k * h, s); g.moveTo(0, k * h); g.lineTo(s, k * h); g.stroke(); }
+    for (let ty = 0; ty < 2; ty++) for (let tx = 0; tx < 2; tx++) { g.fillStyle = `hsl(35,8%,${83 + rnd() * 3}%)`; g.fillRect(tx * h, ty * h, h, h); }
+    speckle(g, s, 2500, 'rgba(90,80,70,0.06)'); grid(g, s, 2, '#bdb6ac', 1.5);
   }),
-  btile: makeTex((g, s) => { // 2ft square, 1x1ft anti-skid tiles
+  btile: makeTex((g, s) => { // 2ft square, 1x1ft pale stone tiles
     const h = s / 2;
-    for (let ty = 0; ty < 2; ty++) for (let tx = 0; tx < 2; tx++) { g.fillStyle = `hsl(205,10%,${58 + rnd() * 6}%)`; g.fillRect(tx * h, ty * h, h, h); }
-    speckle(g, s, 4000, 'rgba(255,255,255,0.12)'); speckle(g, s, 3000, 'rgba(0,0,0,0.12)');
-    g.strokeStyle = '#e6e6e0'; g.lineWidth = 3;
-    for (let k = 0; k <= 2; k++) { g.beginPath(); g.moveTo(k * h, 0); g.lineTo(k * h, s); g.moveTo(0, k * h); g.lineTo(s, k * h); g.stroke(); }
+    for (let ty = 0; ty < 2; ty++) for (let tx = 0; tx < 2; tx++) { g.fillStyle = `hsl(32,10%,${80 + rnd() * 4}%)`; g.fillRect(tx * h, ty * h, h, h); }
+    speckle(g, s, 3000, 'rgba(0,0,0,0.05)'); grid(g, s, 2, '#f2f0ec', 3);
   }),
-  wtile: makeTex((g, s) => { // bathroom wall dado tiles, 2ft square, 1x1.5ft
-    for (let ty = 0; ty < 4; ty++) for (let tx = 0; tx < 2; tx++) { g.fillStyle = `hsl(195,18%,${86 + rnd() * 4}%)`; g.fillRect(tx * s / 2, ty * s / 4, s / 2, s / 4); }
-    g.strokeStyle = '#b9c2c4'; g.lineWidth = 2;
-    for (let k = 0; k <= 4; k++) { g.beginPath(); g.moveTo(0, k * s / 4); g.lineTo(s, k * s / 4); g.stroke(); }
-    for (let k = 0; k <= 2; k++) { g.beginPath(); g.moveTo(k * s / 2, 0); g.lineTo(k * s / 2, s); g.stroke(); }
+  paver: makeTex((g, s) => { // 4ft square, 1ft x 1ft light concrete pavers
+    g.fillStyle = '#a9a39a'; g.fillRect(0, 0, s, s);
+    const b = s / 4;
+    for (let r = 0; r < 4; r++) for (let c = 0; c < 4; c++) { g.fillStyle = `hsl(36,6%,${74 + rnd() * 6}%)`; g.fillRect(c * b + 2, r * b + 2, b - 4, b - 4); }
+    speckle(g, s, 3000, 'rgba(0,0,0,0.06)');
   }),
-  paver: makeTex((g, s) => { // 4ft square, 8"x4" pavers
-    g.fillStyle = '#6d6a66'; g.fillRect(0, 0, s, s);
-    const bw = s / 6, bh = s / 12;
-    for (let r = 0; r < 12; r++) for (let c = -1; c < 7; c++) {
-      const x = c * bw + (r % 2 ? bw / 2 : 0);
-      g.fillStyle = `hsl(${rnd() < 0.15 ? 12 : 30},${rnd() < 0.15 ? 25 : 5}%,${48 + rnd() * 10}%)`;
-      g.fillRect(x + 1.5, r * bh + 1.5, bw - 3, bh - 3);
-    }
-    speckle(g, s, 3000, 'rgba(0,0,0,0.12)');
-  }),
-  grass: makeTex((g, s) => { g.fillStyle = '#5f7f3e'; g.fillRect(0, 0, s, s); speckle(g, s, 9000, 'rgba(30,60,15,0.35)'); speckle(g, s, 6000, 'rgba(150,180,90,0.25)'); }),
-  asphalt: makeTex((g, s) => { g.fillStyle = '#3e4043'; g.fillRect(0, 0, s, s); speckle(g, s, 9000, 'rgba(255,255,255,0.08)'); speckle(g, s, 9000, 'rgba(0,0,0,0.2)'); }),
-  granite: makeTex((g, s) => { g.fillStyle = '#26221f'; g.fillRect(0, 0, s, s); speckle(g, s, 9000, 'rgba(200,190,170,0.18)'); speckle(g, s, 3000, 'rgba(120,80,60,0.3)'); }, 256),
-  fabric: makeTex((g, s) => { g.fillStyle = '#fff'; g.fillRect(0, 0, s, s); for (let i = 0; i < s; i += 4) { g.fillStyle = 'rgba(0,0,0,0.05)'; g.fillRect(i, 0, 2, s); g.fillRect(0, i, s, 2); } }, 128),
+  grass: makeTex((g, s) => { g.fillStyle = '#6f8f48'; g.fillRect(0, 0, s, s); speckle(g, s, 9000, 'rgba(40,70,20,0.3)'); speckle(g, s, 6000, 'rgba(160,190,100,0.22)'); }),
+  asphalt: makeTex((g, s) => { g.fillStyle = '#3a3c3f'; g.fillRect(0, 0, s, s); speckle(g, s, 9000, 'rgba(255,255,255,0.06)'); speckle(g, s, 9000, 'rgba(0,0,0,0.18)'); }),
+  fabric: makeTex((g, s) => { g.fillStyle = '#fff'; g.fillRect(0, 0, s, s); for (let i = 0; i < s; i += 2) { g.fillStyle = `rgba(0,0,0,${0.025 + rnd() * 0.02})`; g.fillRect(i, 0, 1, s); g.fillRect(0, i, s, 1); } }, 256),
+  quartz: makeTex((g, s) => { g.fillStyle = '#efede9'; g.fillRect(0, 0, s, s); speckle(g, s, 2500, 'rgba(120,110,100,0.12)'); speckle(g, s, 600, 'rgba(255,255,255,0.6)'); }, 256),
+  chain: makeTex((g, s) => { g.clearRect(0, 0, s, s); g.strokeStyle = '#9aa0a6'; g.lineWidth = 3; const st = s / 8; for (let i = -8; i < 16; i++) { g.beginPath(); g.moveTo(i * st, 0); g.lineTo(i * st + s, s); g.stroke(); g.beginPath(); g.moveTo(i * st, s); g.lineTo(i * st + s, 0); g.stroke(); } }, 256),
 };
+TEX.fabric.repeat.set(4, 4);
 
-TEX.fabric.repeat.set(6, 6);
 // ---------------------------------------------------------------- materials
 const M = (color, o = {}) => new THREE.MeshStandardMaterial({ color, roughness: 0.85, ...o });
 const mats = {
-  wallIn: M(0xf2ede4, { roughness: 0.95 }), wallExt: M(0xe7d3b3, { roughness: 0.95 }),
-  ceiling: M(0xf8f6f1, { roughness: 1 }), concrete: M(0xbdb8ae, { roughness: 0.95 }),
-  glass: new THREE.MeshPhysicalMaterial({ color: 0xbfe0ee, roughness: 0.05, transparent: true, opacity: 0.22, depthWrite: false }),
-  frosted: new THREE.MeshStandardMaterial({ color: 0xe8f0f2, roughness: 0.4, transparent: true, opacity: 0.7 }),
-  alu: M(0x55595e, { metalness: 0.6, roughness: 0.4 }), chrome: M(0xdddddd, { metalness: 1, roughness: 0.15 }),
-  doorWood: M(0x7a4a2a, { roughness: 0.6 }), frameWood: M(0x5a3520, { roughness: 0.6 }), teak: M(0x8a5530, { roughness: 0.55 }),
-  white: M(0xf7f7f5, { roughness: 0.35 }), porcelain: M(0xffffff, { roughness: 0.15 }),
-  laminate: M(0xcdb69a, { roughness: 0.6 }), laminateDark: M(0x6b4e3a, { roughness: 0.6 }),
-  granite: new THREE.MeshStandardMaterial({ map: TEX.granite, roughness: 0.25 }),
-  steel: M(0xc8ccd0, { metalness: 0.9, roughness: 0.3 }), black: M(0x151515, { roughness: 0.3 }),
-  screen: M(0x050608, { roughness: 0.15, metalness: 0.2 }), mirror: M(0xdde6ea, { metalness: 1, roughness: 0.02 }),
-  mattress: M(0xf5f2ea), pillow: M(0xfbfaf6),
-  sofa: new THREE.MeshStandardMaterial({ color: 0xc9a46a, map: TEX.fabric, roughness: 0.95 }),
-  sofaCush: new THREE.MeshStandardMaterial({ color: 0xd8b67e, map: TEX.fabric, roughness: 0.95 }),
-  navy: M(0x2f4f8f, { roughness: 0.5 }), rug: new THREE.MeshStandardMaterial({ color: 0xd9d0c0, map: TEX.fabric, roughness: 1 }),
-  rug2: new THREE.MeshStandardMaterial({ color: 0x9a8f86, map: TEX.fabric, roughness: 1 }),
-  lightOn: new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xfff2d6, emissiveIntensity: 0.6 }),
-  lamp: new THREE.MeshStandardMaterial({ color: 0xf3e6cf, emissive: 0xffd9a0, emissiveIntensity: 0.6 }),
-  tyre: M(0x1b1b1b, { roughness: 0.9 }), rim: M(0xb0b4b8, { metalness: 0.8, roughness: 0.3 }),
-  carGlass: M(0x1a2630, { roughness: 0.05, metalness: 0.4 }), headlight: new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xfff6e0, emissiveIntensity: 0.4 }),
-  tail: new THREE.MeshStandardMaterial({ color: 0xaa1010, emissive: 0x550000 }),
-  plant: M(0x3f6e33, { roughness: 0.9 }), pot: M(0x9c5a3c, { roughness: 0.9 }),
-  rail: M(0x2a2a2a, { metalness: 0.7, roughness: 0.35 }), compound: M(0xcfc3ad, { roughness: 1 }), gate: M(0x2b2f33, { metalness: 0.6, roughness: 0.5 }),
+  wallIn: M(0xf3f0ea, { roughness: 0.95 }), wallExt: M(0xefe5d6, { roughness: 0.92 }),
+  ceiling: M(0xf8f7f3, { roughness: 1 }), concrete: M(0xd8d2c8, { roughness: 0.95 }),
+  charcoal: M(0x2b2d30, { roughness: 0.75 }), soffit: M(0x9a6a3e, { roughness: 0.6 }),
+  slat: M(0xb7783e, { roughness: 0.55 }), groove: M(0xcfc4b3, { roughness: 1 }),
+  glass: new THREE.MeshPhysicalMaterial({ color: 0xcfe4ee, roughness: 0.03, transparent: true, opacity: 0.16, envMap: skyEnv, envMapIntensity: 1.2, depthWrite: false }),
+  frosted: new THREE.MeshStandardMaterial({ color: 0xeef2f2, roughness: 0.4, transparent: true, opacity: 0.75 }),
+  alu: M(0x1c1e21, { metalness: 0.4, roughness: 0.45 }), chrome: M(0xdddddd, { metalness: 1, roughness: 0.15 }),
+  brass: M(0xc9a66b, { metalness: 0.9, roughness: 0.3 }),
+  doorWood: M(0xd9c3a3, { roughness: 0.55 }), frameWood: M(0xc9ac86, { roughness: 0.55 }), teak: M(0x7b4a2a, { roughness: 0.5 }),
+  white: M(0xf6f5f2, { roughness: 0.5 }), porcelain: M(0xffffff, { roughness: 0.12 }),
+  oakSolid: M(0xd6b48c, { roughness: 0.55 }), oakDark: M(0xb08a62, { roughness: 0.55 }),
+  matteWhite: M(0xf1eee8, { roughness: 0.6 }), shadowLine: M(0xbdb6ab, { roughness: 1 }),
+  quartz: new THREE.MeshStandardMaterial({ map: TEX.quartz, roughness: 0.25 }),
+  steel: M(0xc8ccd0, { metalness: 0.9, roughness: 0.3 }), black: M(0x151515, { roughness: 0.35 }),
+  screen: M(0x07080a, { roughness: 0.12, metalness: 0.3 }), mirror: new THREE.MeshStandardMaterial({ color: 0xe6eef2, metalness: 1, roughness: 0.03, envMap: roomEnv }),
+  linen: new THREE.MeshStandardMaterial({ color: 0xf4f1eb, map: TEX.fabric, roughness: 0.95 }),
+  linenWarm: new THREE.MeshStandardMaterial({ color: 0xe7dfd2, map: TEX.fabric, roughness: 0.95 }),
+  taupe: new THREE.MeshStandardMaterial({ color: 0xc9bca8, map: TEX.fabric, roughness: 0.95 }),
+  greige: new THREE.MeshStandardMaterial({ color: 0xa9a196, map: TEX.fabric, roughness: 0.95 }),
+  sofa: new THREE.MeshStandardMaterial({ color: 0xebe6de, map: TEX.fabric, roughness: 0.95 }),
+  rug: new THREE.MeshStandardMaterial({ color: 0xd2ccc2, map: TEX.fabric, roughness: 1 }),
+  rug2: new THREE.MeshStandardMaterial({ color: 0xe2dbcf, map: TEX.fabric, roughness: 1 }),
+  curtain: new THREE.MeshStandardMaterial({ color: 0xece5d9, map: TEX.fabric, roughness: 0.95, side: THREE.DoubleSide }),
+  lightOn: new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xfff1dc, emissiveIntensity: 0.35 }),
+  lamp: new THREE.MeshStandardMaterial({ color: 0xf3ead8, emissive: 0xffd9a0, emissiveIntensity: 0.18, map: TEX.fabric }),
+  facadeLight: new THREE.MeshStandardMaterial({ color: 0xfff4e0, emissive: 0xffc77a, emissiveIntensity: 0.6 }),
+  leaf: M(0x587d45, { roughness: 0.9, flatShading: true }), leaf2: M(0x6c9152, { roughness: 0.9, flatShading: true }),
+  pot: M(0xf0ece6, { roughness: 0.7 }), potClay: M(0xb7896a, { roughness: 0.9 }),
+  rail: M(0x1c1d1f, { metalness: 0.6, roughness: 0.4 }), compound: M(0xeee6da, { roughness: 1 }),
+  chain: new THREE.MeshStandardMaterial({ map: TEX.chain, transparent: true, alphaTest: 0.3, side: THREE.DoubleSide, metalness: 0.6, roughness: 0.5 }),
 };
 const floorMat = {};
-for (const [k, tile] of Object.entries({ wood: 4, marble: 4, ktile: 4, btile: 2, paver: 4, grass: 16, asphalt: 12 })) {
-  floorMat[k] = new THREE.MeshStandardMaterial({ map: TEX[k], roughness: k === 'marble' ? 0.25 : k === 'wood' ? 0.55 : 0.9 });
+for (const [k, tile] of Object.entries({ oak: 4, marble: 4, ktile: 4, btile: 2, paver: 4, grass: 16, asphalt: 12 })) {
+  floorMat[k] = new THREE.MeshStandardMaterial({ map: TEX[k], roughness: k === 'marble' ? 0.3 : k === 'oak' ? 0.5 : 0.85, envMapIntensity: k === 'oak' || k === 'marble' ? 0.8 : 0.4 });
   floorMat[k].userData.tile = tile;
 }
-const bedColors = [0x5d7fa3, 0xa35d5d, 0x6f8f6a, 0x8a6fa3, 0xb08a4a, 0x4f7f84];
+const litMaterials = []; // window glows that switch on at night
+const artPalettes = [['#e9e2d6', '#c7b49a', '#8f8273'], ['#efe9e1', '#b9a48a', '#d8cbb8'], ['#ece6dc', '#a7a99a', '#cdb79e'], ['#f1ece4', '#c9a78a', '#7f8a86']];
+function artTexture(i) {
+  const c = document.createElement('canvas'); c.width = 256; c.height = 320; const g = c.getContext('2d'), p = artPalettes[i % artPalettes.length];
+  g.fillStyle = p[0]; g.fillRect(0, 0, 256, 320);
+  g.fillStyle = p[1]; g.beginPath(); g.arc(90 + (i * 37) % 80, 140, 70, 0, Math.PI * 2); g.fill();
+  g.fillStyle = p[2]; g.globalAlpha = 0.8; g.beginPath(); g.ellipse(170, 210 - (i * 23) % 60, 60, 90, 0.4, 0, Math.PI * 2); g.fill(); g.globalAlpha = 1;
+  g.strokeStyle = 'rgba(60,50,40,0.5)'; g.lineWidth = 2; g.beginPath(); g.moveTo(30, 260); g.bezierCurveTo(90, 200, 160, 300, 226, 230); g.stroke();
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
+}
 
 // ---------------------------------------------------------------- scene graph
 const groups = [new THREE.Group(), new THREE.Group()];
@@ -164,17 +184,28 @@ function addMesh(geo, mat, x, y, z, grp, cast = true) {
 }
 const B = (w, h, d, mat, x, y, z, grp, cast) => addMesh(new THREE.BoxGeometry(w, h, d), mat, x, y, z, grp, cast);
 
-function floorPlane(x1, z1, x2, z2, y, mat, grp, flip = false) {
+function floorPlane(x1, z1, x2, z2, y, mat, grp) {
   const geo = new THREE.PlaneGeometry(x2 - x1, z2 - z1);
-  geo.rotateX(flip ? Math.PI / 2 : -Math.PI / 2);
+  geo.rotateX(-Math.PI / 2);
   geo.translate((x1 + x2) / 2, y, (z1 + z2) / 2);
   const tile = mat.userData.tile || 4, pos = geo.attributes.position, uv = geo.attributes.uv;
   for (let i = 0; i < pos.count; i++) uv.setXY(i, pos.getX(i) / tile, pos.getZ(i) / tile);
   const m = new THREE.Mesh(geo, mat); m.receiveShadow = true; grp.add(m); return m;
 }
 
+// a gently pleated curtain panel hanging from y1 to y0
+function curtainPanel(width, height, folds) {
+  const geo = new THREE.PlaneGeometry(width, height, folds * 6, 1);
+  const pos = geo.attributes.position;
+  for (let i = 0; i < pos.count; i++) pos.setZ(i, Math.sin((pos.getX(i) / width) * folds * Math.PI * 2) * 0.09);
+  geo.computeVertexNormals();
+  return geo;
+}
+
 // ---------------------------------------------------------------- walls, doors, windows
-const OPEN = { D: [0, 7], M: [0, 7.5], O: [0, 7], W: [3, 7], V: [6, 7.5] };
+// type: D door, M main double door, O open doorway, W window (with curtains), K kitchen window,
+// F front-facade window (large, black frame), V ventilator
+const OPEN = { D: [0, 7], M: [0, 7.5], O: [0, 7], W: [3, 7], K: [3.5, 7], F: [2.5, 7.6], V: [6, 7.5] };
 const T_EXT = 0.75, T_INT = 0.4;
 
 function wallMaterial(dir, ext) {
@@ -184,15 +215,11 @@ function wallMaterial(dir, ext) {
   return arr;
 }
 
-// dir 'h': wall along x at image-y = c, from image-x a to b.  dir 'v': along z at image-x = c.
-// ops: [from, to, type, hinge]  type D door, M main double door, O open doorway, W window, V ventilator.
-// ext: which side (+1 / -1 along the wall normal) is the inside, for exterior walls.
 function wall(lvl, dir, c, a, b, t, ops = [], ext = 0) {
   const grp = groups[lvl], base = lvl * FH;
   const along = (v) => (dir === 'h' ? X(v, lvl) : Z(v));
   const cc = dir === 'h' ? Z(c) : X(c, lvl);
   const mat = wallMaterial(dir, ext);
-  // place a box in wall-local coordinates
   const put = (s, e, y0, y1, off, thick, m, cast = true) => {
     const L = e - s, mid = (s + e) / 2, h = y1 - y0;
     return dir === 'h' ? B(L, h, thick, m, mid, base + y0 + h / 2, cc + off, grp, cast)
@@ -215,26 +242,35 @@ function wall(lvl, dir, c, a, b, t, ops = [], ext = 0) {
       seg(o.s, o.e, 0, sill, true);
       colliders[lvl].push(dir === 'h' ? [o.s, cc - t / 2, o.e, cc + t / 2] : [cc - t / 2, o.s, cc + t / 2, o.e]);
       mapWalls[lvl].push(dir === 'h' ? [o.s, cc - 0.06, o.e, cc + 0.06] : [cc - 0.06, o.s, cc + 0.06, o.e]);
-      // frame + glass
-      const fw = 0.16, ft = Math.min(t, 0.35);
-      put(o.s, o.e, sill, sill + fw, 0, ft, mats.alu);
-      put(o.s, o.e, head - fw, head, 0, ft, mats.alu);
-      put(o.s, o.s + fw, sill, head, 0, ft, mats.alu);
-      put(o.e - fw, o.e, sill, head, 0, ft, mats.alu);
-      if (o.type === 'W') {
-        const n = o.e - o.s > 3.5 ? 2 : 1;
-        for (let i = 1; i <= n; i++) { const m = o.s + ((o.e - o.s) * i) / (n + 1); put(m - 0.06, m + 0.06, sill, head, 0, ft, mats.alu); }
-        put(o.s + fw, o.e - fw, sill + fw, head - fw, 0, 0.04, mats.glass, false);
-        // safety grill bars, typical of Indian homes
-        for (let y = sill + 0.6; y < head - 0.2; y += 0.6) put(o.s + fw, o.e - fw, y - 0.02, y + 0.02, ext ? -ext * (t / 2 - 0.05) : 0.12, 0.04, mats.rail, false);
-        if (ext) put(o.s - 0.5, o.e + 0.5, head + 0.05, head + 0.3, -ext * (t / 2 + 0.75), 1.5, mats.concrete); // sunshade (chajja)
+      const fw = o.type === 'F' ? 0.28 : 0.15, ft = o.type === 'F' ? t + 0.3 : Math.min(t, 0.35);
+      const fo = o.type === 'F' ? -ext * 0.15 : 0;
+      put(o.s, o.e, sill, sill + fw, fo, ft, mats.alu);
+      put(o.s, o.e, head - fw, head, fo, ft, mats.alu);
+      put(o.s, o.s + fw, sill, head, fo, ft, mats.alu);
+      put(o.e - fw, o.e, sill, head, fo, ft, mats.alu);
+      put(o.s, o.e, sill - 0.08, sill, ext ? ext * 0.1 : 0, t + 0.25, mats.white); // sill stone
+      if (o.type !== 'V') {
+        const m = (o.s + o.e) / 2;
+        put(m - 0.05, m + 0.05, sill, head, 0, 0.12, mats.alu);
+        put(o.s + fw, o.e - fw, sill + fw, head - fw, 0, 0.03, mats.glass, false);
+        if (ext && o.type !== 'K') { // curtains on the room side
+          const side = ext, wdt = (o.e - o.s) * 0.3 + 0.5, hgt = head + 0.6 - 0.25;
+          const off = side * (t / 2 + 0.3);
+          for (const [pos, sgn] of [[o.s - 0.25 + wdt / 2, 1], [o.e + 0.25 - wdt / 2, -1]]) {
+            const cm = new THREE.Mesh(curtainPanel(wdt, hgt, Math.round(wdt * 1.6)), mats.curtain);
+            cm.castShadow = true; cm.receiveShadow = true; void sgn;
+            if (dir === 'h') cm.position.set(pos, base + 0.25 + hgt / 2, cc + off);
+            else { cm.rotation.y = Math.PI / 2; cm.position.set(cc + off, base + 0.25 + hgt / 2, pos); }
+            grp.add(cm);
+          }
+          put(o.s - 0.6, o.e + 0.6, head + 0.65, head + 0.72, off, 0.07, mats.rail, false); // rod
+        }
       } else {
         put(o.s + fw, o.e - fw, sill + fw, head - fw, 0, 0.05, mats.frosted, false);
-        for (let y = sill + 0.3; y < head - 0.1; y += 0.3) put(o.s + fw, o.e - fw, y - 0.03, y + 0.03, 0.05, 0.12, mats.alu, false);
+        for (let y = sill + 0.3; y < head - 0.1; y += 0.3) put(o.s + fw, o.e - fw, y - 0.02, y + 0.02, 0.05, 0.1, mats.alu, false);
       }
     } else {
-      // door frame
-      const jt = t + 0.08;
+      const jt = t + 0.1;
       put(o.s, o.s + 0.15, 0, head, 0, jt, mats.frameWood);
       put(o.e - 0.15, o.e, 0, head, 0, jt, mats.frameWood);
       put(o.s, o.e, head - 0.15, head, 0, jt, mats.frameWood);
@@ -244,14 +280,10 @@ function wall(lvl, dir, c, a, b, t, ops = [], ext = 0) {
         for (const [h, W] of leaves) {
           const hx = h === 's' ? o.s + 0.22 : o.e - 0.22;
           const off = side * (t / 2 + W / 2);
-          const leaf = put(hx - 0.07, hx + 0.07, 0.05, head - 0.17, off, W, o.type === 'M' ? mats.teak : mats.doorWood);
-          // handle
-          const hOff = side * (t / 2 + W - 0.3);
-          put(hx - 0.14, hx + 0.14, 3.3, 3.42, hOff, 0.35, mats.chrome);
-          void leaf;
-          const lr = dir === 'h' ? [hx - 0.07, cc + Math.min(off - W / 2 * side, off + W / 2 * side), hx + 0.07, cc + Math.max(off - W / 2 * side, off + W / 2 * side)]
-            : [cc + Math.min(off - W / 2 * side, off + W / 2 * side), hx - 0.07, cc + Math.max(off - W / 2 * side, off + W / 2 * side), hx + 0.07];
-          colliders[lvl].push(lr);
+          put(hx - 0.07, hx + 0.07, 0.05, head - 0.17, off, W, o.type === 'M' ? mats.teak : mats.doorWood);
+          put(hx - 0.1, hx + 0.1, 3.3, 3.38, side * (t / 2 + W - 0.35), 0.45, mats.alu);
+          const a1 = off - (W / 2) * side, a2 = off + (W / 2) * side;
+          colliders[lvl].push(dir === 'h' ? [hx - 0.07, cc + Math.min(a1, a2), hx + 0.07, cc + Math.max(a1, a2)] : [cc + Math.min(a1, a2), hx - 0.07, cc + Math.max(a1, a2), hx + 0.07]);
         }
       }
     }
@@ -262,7 +294,7 @@ function wall(lvl, dir, c, a, b, t, ops = [], ext = 0) {
 
 // ---- Ground floor (left plan)
 wall(0, 'h', 51, 40, 512, T_EXT, [[265, 345, 'W']], +1);
-wall(0, 'v', 46, 45, 478, T_EXT, [[105, 158, 'W']], +1);
+wall(0, 'v', 46, 45, 478, T_EXT, [[105, 158, 'K']], +1);
 wall(0, 'v', 506, 45, 478, T_EXT, [[155, 205, 'W'], [268, 298, 'V'], [400, 432, 'V']], -1);
 wall(0, 'h', 472, 40, 512, T_EXT, [[68, 128, 'M', 's-'], [132, 208, 'W']], -1);
 wall(0, 'h', 203, 46, 88, T_INT);
@@ -271,22 +303,20 @@ wall(0, 'h', 260, 234, 413, T_INT);
 wall(0, 'v', 413, 205, 472, T_INT, [[218, 256, 'D', 's+'], [375, 413, 'D', 's+']]);
 wall(0, 'h', 205, 413, 506, T_INT);
 wall(0, 'h', 363, 413, 506, T_INT);
-wall(0, 'h', 606, 188, 417, T_EXT, [], -1);   // staircase enclosure
-wall(0, 'v', 411, 472, 612, T_EXT, [], -1);
 
 // ---- First floor (right plan, x offset 665px)
 wall(1, 'h', 51, 705, 1177, T_EXT, [[932, 1010, 'W']], +1);
-wall(1, 'v', 711, 45, 1035, T_EXT, [[95, 158, 'W'], [755, 790, 'V'], [925, 1010, 'W']], +1);
+wall(1, 'v', 711, 45, 1035, T_EXT, [[95, 158, 'K'], [755, 790, 'V'], [925, 1010, 'W']], +1);
 wall(1, 'v', 1171, 45, 1035, T_EXT, [[155, 205, 'W'], [297, 333, 'V'], [485, 520, 'V'], [700, 780, 'W'], [975, 1010, 'V']], -1);
-wall(1, 'h', 1029, 705, 1177, T_EXT, [[790, 840, 'W'], [925, 980, 'W']], -1);
+wall(1, 'h', 1029, 705, 1177, T_EXT, [[760, 860, 'F'], [920, 995, 'F']], -1);
 wall(1, 'h', 203, 711, 753, T_INT);
 wall(1, 'v', 899, 51, 472, T_INT, [[208, 255, 'D', 's+'], [405, 455, 'D', 'e+']]);
 wall(1, 'h', 260, 899, 1171, T_INT, [[1088, 1128, 'D', 's+']]);
 wall(1, 'v', 1080, 260, 606, T_INT, [[425, 462, 'D', 's+']]);
 wall(1, 'h', 418, 1080, 1171, T_INT);
 wall(1, 'h', 544, 1080, 1171, T_INT);
-wall(1, 'h', 472, 711, 1080, T_INT, [[735, 790, 'D', 's-'], [795, 875, 'W']]);
-wall(1, 'h', 606, 794, 1171, T_INT, [[812, 865, 'W'], [1125, 1163, 'O']]);
+wall(1, 'h', 472, 711, 1080, T_INT, [[735, 790, 'D', 's-'], [795, 875, 'K']]);
+wall(1, 'h', 606, 794, 1171, T_INT, [[812, 865, 'K'], [1125, 1163, 'O']]);
 wall(1, 'v', 794, 606, 712, T_INT, [[615, 665, 'D', 's+']]);
 wall(1, 'h', 712, 711, 800, T_INT);
 wall(1, 'v', 800, 712, 840, T_INT);
@@ -297,31 +327,30 @@ wall(1, 'h', 880, 1003, 1171, T_INT, [[1085, 1120, 'D', 's+']]);
 wall(1, 'v', 1077, 880, 1029, T_INT);
 
 // ---------------------------------------------------------------- rooms
-// [level, name, x1, y1, x2, y2 (image px), floor finish, extra]
 const ROOM_DEFS = [
   [0, 'Kitchen', 52, 57, 232, 203, 'ktile'],
-  [0, 'Living Hall', 52, 203, 232, 466, 'marble'],
-  [0, 'Master Bedroom', 236, 57, 500, 205, 'wood'],
-  [0, 'Master Bedroom', 236, 205, 411, 258, 'wood', { nolight: true }],
-  [0, 'Bedroom', 236, 262, 411, 466, 'wood'],
+  [0, 'Living Hall', 52, 203, 232, 466, 'oak'],
+  [0, 'Master Bedroom', 236, 57, 500, 205, 'oak'],
+  [0, 'Master Bedroom', 236, 205, 411, 258, 'oak', { nolight: true }],
+  [0, 'Bedroom', 236, 262, 411, 466, 'oak'],
   [0, 'Toilet (Master Bedroom)', 415, 207, 500, 361, 'btile'],
   [0, 'Toilet (Bedroom)', 415, 365, 500, 466, 'btile'],
   [0, 'Staircase', 188, 478, 411, 606, null, { lights: [[215, 510], [380, 545]] }],
-  [0, 'Parking', 40, 478, 512, 1035, null, { lights: [[110, 700], [400, 700], [270, 880]] }],
+  [0, 'Parking', 40, 478, 512, 1035, null, { lights: [[120, 640], [400, 640], [120, 900], [270, 900], [420, 900]] }],
   [1, 'Kitchen · Flat A', 717, 57, 897, 203, 'ktile'],
-  [1, 'Living Hall · Flat A', 717, 203, 897, 466, 'marble'],
-  [1, 'Master Bedroom · Flat A', 901, 57, 1165, 258, 'wood'],
-  [1, 'Bedroom · Flat A', 901, 262, 1078, 466, 'wood'],
+  [1, 'Living Hall · Flat A', 717, 203, 897, 466, 'oak'],
+  [1, 'Master Bedroom · Flat A', 901, 57, 1165, 258, 'oak'],
+  [1, 'Bedroom · Flat A', 901, 262, 1078, 466, 'oak'],
   [1, 'Toilet (M.Bed) · Flat A', 1082, 262, 1165, 416, 'btile'],
   [1, 'Toilet · Flat A', 1082, 420, 1165, 542, 'btile'],
-  [1, 'Study', 1082, 546, 1165, 604, 'wood'],
+  [1, 'Study', 1082, 546, 1165, 604, 'oak'],
   [1, 'Lobby', 717, 475, 853, 606, 'marble'],
   [1, 'Passage (4\' wide)', 717, 606, 792, 710, 'marble'],
-  [1, 'Living Hall · Flat B', 802, 608, 1001, 838, 'marble'],
-  [1, 'Kitchen passage · Flat B', 901, 838, 1001, 880, 'marble', { nolight: true }],
+  [1, 'Living Hall · Flat B', 802, 608, 1001, 838, 'oak'],
+  [1, 'Kitchen passage · Flat B', 901, 838, 1001, 880, 'oak', { nolight: true }],
   [1, 'Toilet · Flat B', 717, 714, 798, 838, 'btile'],
-  [1, 'Bedroom 3 · Flat B', 717, 842, 897, 1023, 'wood'],
-  [1, 'Bedroom 2 · Flat B', 1005, 608, 1165, 878, 'wood'],
+  [1, 'Bedroom 3 · Flat B', 717, 842, 897, 1023, 'oak'],
+  [1, 'Bedroom 2 · Flat B', 1005, 608, 1165, 878, 'oak'],
   [1, 'Kitchen · Flat B', 901, 882, 1075, 1023, 'ktile'],
   [1, 'Toilet 2 · Flat B', 1079, 882, 1165, 1023, 'btile'],
   [1, 'Staircase', 853, 475, 1078, 606, null, { nolight: true }],
@@ -334,80 +363,131 @@ const ROOMS = ROOM_DEFS.map(([lvl, name, a, b, c, d, floor, extra = {}]) => ({
 const lightSpots = []; // {x,y,z,lvl,power}
 for (const r of ROOMS) {
   const base = r.lvl * FH;
-  if (r.floor) floorPlane(r.x1, r.z1, r.x2, r.z2, base + 0.012, floorMat[r.floor], groups[r.lvl]);
+  if (r.floor) {
+    floorPlane(r.x1, r.z1, r.x2, r.z2, base + 0.012, floorMat[r.floor], groups[r.lvl]);
+    if (r.floor !== 'btile' && !r.extra.nolight) { // slim skirting
+      const g = groups[r.lvl], sk = 0.33, e = 0.04;
+      B(r.x2 - r.x1, sk, e, mats.white, r.cx, base + sk / 2, r.z1 + e / 2, g, false);
+      B(r.x2 - r.x1, sk, e, mats.white, r.cx, base + sk / 2, r.z2 - e / 2, g, false);
+      B(e, sk, r.z2 - r.z1, mats.white, r.x1 + e / 2, base + sk / 2, r.cz, g, false);
+      B(e, sk, r.z2 - r.z1, mats.white, r.x2 - e / 2, base + sk / 2, r.cz, g, false);
+    }
+  }
   if (r.extra.nolight) continue;
   const spots = r.extra.lights ? r.extra.lights.map(([a, b]) => [X(a, r.lvl), Z(b)]) : [[r.cx, r.cz]];
   const area = (r.x2 - r.x1) * (r.z2 - r.z1);
   for (const [x, z] of spots) {
-    const small = area < 60;
     if (r.name === 'Staircase') { lightSpots.push({ x, y: 9, z, lvl: 0, power: 0.45 }); lightSpots.push({ x, y: 13, z, lvl: 1, power: 0.45 }); continue; }
-    addMesh(new THREE.CylinderGeometry(small ? 0.45 : 0.75, small ? 0.45 : 0.75, 0.08, 24), mats.lightOn, x, base + WH - 0.05, z, groups[r.lvl], false);
+    const small = area < 60 || r.name === 'Parking';
+    addMesh(new THREE.CylinderGeometry(small ? 0.32 : 0.6, small ? 0.36 : 0.66, 0.1, 28), mats.lightOn, x, base + WH - 0.05, z, groups[r.lvl], false);
     lightSpots.push({ x, y: base + WH - 0.6, z, lvl: r.lvl, power: small ? 0.6 : 1 });
   }
 }
-// ---------------------------------------------------------------- slabs, roof, structure
+
+// ---------------------------------------------------------------- slabs, roof, structure, facade
 {
   const g1 = groups[1];
-  const slab = (a, b, c, d, y, grp, mat = mats.ceiling) => {
+  const slab = (a, b, c, d, y, grp) => {
     const x1 = X(a), x2 = X(c), z1 = Z(b), z2 = Z(d);
-    B(x2 - x1, SLAB, z2 - z1, [mats.concrete, mats.concrete, mats.concrete, mat, mats.concrete, mats.concrete], (x1 + x2) / 2, y - SLAB / 2, (z1 + z2) / 2, grp);
+    B(x2 - x1, SLAB, z2 - z1, [mats.wallExt, mats.wallExt, mats.concrete, mats.ceiling, mats.wallExt, mats.wallExt], (x1 + x2) / 2, y - SLAB / 2, (z1 + z2) / 2, grp);
   };
-  // first-floor slab with the staircase opening (188..411 x 475..606)
   slab(40, 45, 512, 475, FH, g1); slab(40, 606, 512, 1035, FH, g1);
   slab(40, 475, 189, 606, FH, g1); slab(411, 475, 512, 606, FH, g1);
-  // roof slab + parapet
   slab(40, 45, 512, 1035, 2 * FH, roofGroup);
+  // roof: parapet on three sides, a black railing on the street side, stair headroom block at the front right
   const px1 = X(40), px2 = X(512), pz1 = Z(45), pz2 = Z(1035), ph = 3, pt = 0.5, py = 2 * FH + ph / 2;
   B(px2 - px1, ph, pt, mats.wallExt, (px1 + px2) / 2, py, pz1 + pt / 2, roofGroup);
-  B(px2 - px1, ph, pt, mats.wallExt, (px1 + px2) / 2, py, pz2 - pt / 2, roofGroup);
   B(pt, ph, pz2 - pz1, mats.wallExt, px1 + pt / 2, py, (pz1 + pz2) / 2, roofGroup);
   B(pt, ph, pz2 - pz1, mats.wallExt, px2 - pt / 2, py, (pz1 + pz2) / 2, roofGroup);
   floorPlane(px1, pz1, px2, pz2, 2 * FH + 0.01, floorMat.btile, roofGroup);
-  // beams around the open parking, under the first floor
+  const mx1 = X(250), mx2 = px2, mz1 = Z(840), mz2 = pz2;
+  B(mx2 - mx1, 9.5, mz2 - mz1, mats.wallExt, (mx1 + mx2) / 2, 2 * FH + 4.75, (mz1 + mz2) / 2, roofGroup);
+  B(mx2 - mx1 + 0.6, 0.5, mz2 - mz1 + 0.6, mats.wallExt, (mx1 + mx2) / 2, 2 * FH + 9.75, (mz1 + mz2) / 2, roofGroup);
+  for (let y = 2 * FH + 1.5; y < 2 * FH + 9; y += 1.25) B(mx2 - mx1 + 0.02, 0.05, 0.03, mats.groove, (mx1 + mx2) / 2, y, mz2 + 0.02, roofGroup, false);
+  const rz = pz2 + 1.0;
+  B(mx1 - px1, 0.12, 0.12, mats.rail, (px1 + mx1) / 2, 2 * FH + 4.4, rz, roofGroup);
+  for (let x = px1 + 0.2; x < mx1; x += 0.42) B(0.06, 3.2, 0.06, mats.rail, x, 2 * FH + 2.8, rz, roofGroup, false);
+  B(0.12, 0.12, mz1 - pz1 + 0.5, mats.rail, px1 + 0.3, 2 * FH + 4.4, (pz1 + mz1) / 2, roofGroup);
+
+  // beams and columns of the open parking
   const beam = (a, b, c, d) => { const x1 = X(a), x2 = X(c), z1 = Z(b), z2 = Z(d); B(x2 - x1, 1.25, z2 - z1, mats.wallExt, (x1 + x2) / 2, WH - 0.625, (z1 + z2) / 2, g1); };
-  beam(40, 478, 52, 1035); beam(500, 478, 512, 1035); beam(40, 1023, 512, 1035); beam(40, 744, 512, 756);
-  // columns
-  for (const cx of [46, 188, 352, 506]) for (const cy of [750, 1029]) {
-    const x = X(cx), z = Z(cy), s = 0.9;
-    B(s, WH, s, mats.wallExt, x, WH / 2, z, groups[0]);
+  beam(40, 478, 52, 1035); beam(500, 478, 512, 1035); beam(40, 744, 512, 756);
+  for (const cx of [46, 188, 352, 506]) for (const cy of [750, 1026]) {
+    const x = X(cx), z = Z(cy), s = 1.15;
+    B(s, WH, s, mats.white, x, WH / 2, z, groups[0]);
     colliders[0].push([x - s / 2, z - s / 2, x + s / 2, z + s / 2]); mapWalls[0].push([x - s / 2, z - s / 2, x + s / 2, z + s / 2]);
   }
+
+  // ---- front elevation: charcoal box frame around the first floor, wood soffit with downlights,
+  // grooved cream panel on the left, charcoal panel with vertical wooden slats on the right.
+  const zF = Z(1035), fx1 = X(40) - 0.4, fx2 = X(512) + 0.4, fd = 2.4, fz = zF + fd / 2 - 0.3;
+  const fw = fx2 - fx1, fcx = (fx1 + fx2) / 2;
+  B(fw, 2.4, fd, mats.charcoal, fcx, 2 * FH + 0.4, fz, roofGroup);          // top band (y 19.2–21.6)
+  B(fw, 1.7, fd, mats.charcoal, fcx, FH - 0.55, fz, g1);                    // bottom band (y 8.6–10.3)
+  for (const x of [fx1 + 0.55, fx2 - 0.55]) B(1.1, 11.0, fd, mats.charcoal, x, FH + 4.75, fz, g1); // side posts
+  const soffitY = 2 * FH - 0.81;
+  B(fw - 2.2, 0.06, fd - 0.3, mats.soffit, fcx, soffitY, zF + fd / 2 - 0.15, g1, false);
+  for (let i = 0; i < 5; i++) {
+    const x = fx1 + 2 + ((fw - 4) * (i + 0.5)) / 5;
+    addMesh(new THREE.CylinderGeometry(0.22, 0.22, 0.05, 20), mats.facadeLight, x, soffitY - 0.04, zF + 1.0, g1, false);
+  }
+  const split = X(330);
+  const winX = [[X(95) - 0.35, X(195) + 0.35], [X(255) - 0.35, X(330) + 0.35]];
+  for (let y = FH + 0.9; y < 2 * FH - 1; y += 1.15) {
+    const inWin = y > FH + 2.3 && y < FH + 7.8;
+    const spans = inWin ? [[fx1 + 1.1, winX[0][0]], [winX[0][1], winX[1][0]]] : [[fx1 + 1.1, split]];
+    for (const [a, b] of spans) if (b - a > 0.1) B(b - a, 0.05, 0.04, mats.groove, (a + b) / 2, y, zF + 0.02, g1, false);
+  }
+  B(fx2 - 1.1 - split, 2 * FH - 0.8 - (FH + 0.3), 0.08, mats.charcoal, (split + fx2 - 1.1) / 2, (FH + 0.3 + 2 * FH - 0.8) / 2, zF + 0.04, g1);
+  const sx1 = X(352), sx2 = X(470);
+  for (let x = sx1; x < sx2; x += 0.36) B(0.2, 2 * FH - 0.8 - (FH + 0.3) - 0.2, 0.22, mats.slat, x, (FH + 0.3 + 2 * FH - 0.8) / 2, zF + 0.18, g1);
+  for (const x of [sx1 + (sx2 - sx1) * 0.28, sx1 + (sx2 - sx1) * 0.72]) {
+    B(0.5, 0.6, 0.3, mats.charcoal, x, FH + 5.6, zF + 0.45, g1);
+    B(0.4, 0.05, 0.22, mats.facadeLight, x, FH + 5.28, zF + 0.45, g1, false);
+  }
+  // parking ceiling front soffit trim
+  B(fw - 2.2, 0.06, 1.2, mats.soffit, fcx, WH - 1.27, Z(1029), g1, false);
 }
 
-// ---------------------------------------------------------------- staircase (dog-leg, 18 risers)
+// ---------------------------------------------------------------- staircase (open dog-leg, 18 risers, black railing)
 const STAIR = { x1: 188, x2: 411, y1: 478, ymid: 542, y2: 606, f1s: 240, land: 350 };
 {
-  const g = groups[0], tread = new THREE.MeshStandardMaterial({ map: TEX.marble, color: 0xd8cfc2, roughness: 0.35 });
+  const g = groups[0];
+  const tread = new THREE.MeshStandardMaterial({ map: TEX.marble, color: 0xf2eee8, roughness: 0.35 });
+  const plaster = [mats.white, mats.white, tread, mats.white, mats.white, mats.white];
   const z1 = Z(STAIR.y1), zm = Z(STAIR.ymid), z2 = Z(STAIR.y2);
   const w1 = (STAIR.land - STAIR.f1s) / 9, w2 = (STAIR.land - STAIR.x1) / 9;
-  for (let k = 0; k < 9; k++) { // flight 1 (upper row), rising to the right
+  for (let k = 0; k < 9; k++) {
     const a = X(STAIR.f1s + k * w1), b = X(STAIR.f1s + (k + 1) * w1), top = ((k + 1) * 5) / 9;
-    B(b - a, top, zm - z1, tread, (a + b) / 2, top / 2, (z1 + zm) / 2, g);
+    B(b - a, top, zm - z1, plaster, (a + b) / 2, top / 2, (z1 + zm) / 2, g);
   }
   const la = X(STAIR.land), lb = X(STAIR.x2);
-  B(lb - la, 5, z2 - z1, tread, (la + lb) / 2, 2.5, (z1 + z2) / 2, g); // mid landing
-  for (let j = 0; j < 9; j++) { // flight 2 (lower row), rising to the left
+  B(lb - la, 5, z2 - z1, plaster, (la + lb) / 2, 2.5, (z1 + z2) / 2, g);
+  for (let j = 0; j < 9; j++) {
     const b = X(STAIR.land - j * w2), a = X(STAIR.land - (j + 1) * w2), top = 5 + ((j + 1) * 5) / 9;
-    B(b - a, top, z2 - zm, tread, (a + b) / 2, top / 2, (zm + z2) / 2, g);
+    B(b - a, top, z2 - zm, plaster, (a + b) / 2, top / 2, (zm + z2) / 2, g);
   }
-  // railing between flights following flight 2, plus a guard rail on the first floor
-  const rail = (xa, ya, xb, yb, z, grp) => {
-    const dx = xb - xa, dy = yb - ya, L = Math.hypot(dx, dy);
-    const m = B(L, 0.12, 0.12, mats.teak, (xa + xb) / 2, (ya + yb) / 2, z, grp); m.rotation.z = Math.atan2(dy, dx);
+  const railLine = (xa, ya, za, xb, yb, zb, grp, posts = true) => {
+    const dx = xb - xa, dy = yb - ya, dz = zb - za, L = Math.hypot(dx, dy, dz);
+    const m = B(0.1, 0.1, L, mats.rail, (xa + xb) / 2, (ya + yb) / 2, (za + zb) / 2, grp);
+    m.lookAt(xb, yb, zb);
+    if (!posts) return;
+    const n = Math.max(2, Math.round(Math.hypot(dx, dz) / 0.4));
+    for (let i = 0; i <= n; i++) {
+      const t = i / n, x = xa + dx * t, z = za + dz * t, top = ya + dy * t;
+      B(0.05, 3, 0.05, mats.rail, x, top - 1.5, z, grp, false);
+    }
   };
-  const xA = X(STAIR.land), xB = X(STAIR.x1 + 4), zr = zm;
-  rail(xA, 8, xB, 13, zr, g);
-  for (let i = 0; i <= 9; i++) {
-    const x = xA + ((xB - xA) * i) / 9, top = 8 + (5 * i) / 9, bottom = 5 + (5 * i) / 9;
-    B(0.06, top - bottom, 0.06, mats.rail, x, (top + bottom) / 2, zr, g);
-  }
+  // outer (street-side) railing of flight 2 and the landing, and the inner railing between flights
+  railLine(X(STAIR.land), 8, z2 - 0.1, X(STAIR.x1 + 3), 13, z2 - 0.1, g);
+  railLine(X(STAIR.land), 8, z2 - 0.1, lb - 0.1, 8, z2 - 0.1, g);
+  railLine(lb - 0.1, 8, z2 - 0.1, lb - 0.1, 8, z1 + 0.3, g);
+  railLine(X(STAIR.land), 8, zm, X(STAIR.x1 + 4), 13, zm, g);
+  railLine(X(STAIR.f1s), 3, zm - 0.05, X(STAIR.land), 8, zm - 0.05, g);
   const xr = X(STAIR.x1 + 2);
-  B(0.12, 0.12, zm - z1, mats.teak, xr, FH + 3, (z1 + zm) / 2, groups[1]);
-  for (let z = z1 + 0.3; z < zm; z += 0.4) B(0.06, 3, 0.06, mats.rail, xr, FH + 1.5, z, groups[1]);
-  B(0.12, 0.12, zm - Z(STAIR.y1), mats.teak, xr, FH + 3, (z1 + zm) / 2, groups[1]);
-  floorPlane(X(STAIR.x1), z1, X(STAIR.f1s), zm, 0.012, new THREE.MeshStandardMaterial({ map: TEX.granite, color: 0x9a8f86, roughness: 0.4 }), g);
+  railLine(xr, FH + 3, z1 + 0.1, xr, FH + 3, zm, groups[1]);
+  floorPlane(X(STAIR.x1), z1, X(STAIR.f1s), zm, 0.012, floorMat.marble, g);
 }
-// Height of the walking surface at (x, z) given the current height.
 function groundAt(x, z, curH) {
   const px = x * PX + 40, py = z * PX + 45;
   if (px >= STAIR.x1 && px <= STAIR.x2 && py >= STAIR.y1 && py <= STAIR.y2) {
@@ -418,225 +498,292 @@ function groundAt(x, z, curH) {
   return curH > 5 ? FH : 0;
 }
 
-// ---------------------------------------------------------------- site
+// ---------------------------------------------------------------- site and neighbourhood
+const roadZ = Z(1041) + 6;
 {
   const g = siteGroup;
-  floorPlane(-120, -80, 150, 170, -0.03, floorMat.grass, g);
-  floorPlane(X(10), Z(10), X(540), Z(1038), 0.0, floorMat.paver, g);
-  const roadZ = Z(1038) + 6;
-  floorPlane(-120, roadZ, 150, roadZ + 26, -0.01, floorMat.asphalt, g);
-  floorPlane(-120, Z(1038), 150, roadZ, -0.005, floorMat.paver, g);
-  for (let x = -110; x < 150; x += 12) B(5, 0.02, 0.35, mats.white, x, 0.0, roadZ + 13, g, false);
-  // compound wall with two gates (plot boundary = pink dashed line)
-  const cw = (a, b, c, d) => {
-    const x1 = X(a), x2 = X(c), z1 = Z(b), z2 = Z(d), h = 4.5;
+  floorPlane(-200, -140, 240, 260, -0.04, floorMat.grass, g);
+  floorPlane(X(10), Z(10), X(540), Z(1041), 0.0, floorMat.paver, g);
+  floorPlane(-200, roadZ, 240, roadZ + 26, -0.01, floorMat.asphalt, g);
+  floorPlane(-200, Z(1041), 240, roadZ, -0.005, floorMat.paver, g);
+  floorPlane(-200, roadZ + 26, 240, roadZ + 32, -0.005, floorMat.paver, g);
+  for (const z of [roadZ - 0.2, roadZ + 26.2]) B(440, 0.45, 0.6, mats.concrete, 20, 0.2, z, g, false);
+  for (let x = -190; x < 240; x += 14) B(6, 0.02, 0.4, mats.white, x, 0.0, roadZ + 13, g, false);
+  // side boundary: low wall with chain-link fence above; rear wall
+  const cw = (a, b, c, d, h = 4.5) => {
+    const x1 = X(a), x2 = X(c), z1 = Z(b), z2 = Z(d);
     B(x2 - x1, h, z2 - z1, mats.compound, (x1 + x2) / 2, h / 2, (z1 + z2) / 2, g);
     colliders[0].push([x1, z1, x2, z2]); mapWalls[0].push([x1, z1, x2, z2]);
   };
-  cw(7, 7, 16, 1041); cw(534, 7, 543, 1041); cw(7, 7, 543, 16);
-  cw(7, 1035, 65, 1041); cw(237, 1035, 280, 1041); cw(452, 1035, 543, 1041);
-  // gates swung open onto the road
-  for (const [a, b] of [[65, 237], [280, 452]]) {
-    const x1 = X(a), x2 = X(b), w = (x2 - x1) / 2, z = Z(1041);
-    for (const [hx, s] of [[x1, 1], [x2, -1]]) {
-      B(0.12, 4.2, w, mats.gate, hx + s * 0.2, 2.2, z + w / 2, g);
-      for (let i = 0; i < 3; i++) B(0.1, 0.1, w, mats.gate, hx + s * 0.2, 0.6 + i * 1.6, z + w / 2, g);
-    }
+  cw(7, 7, 16, 1041, 2); cw(534, 7, 543, 1041, 2); cw(7, 7, 543, 16, 6);
+  for (const a of [11.5, 538.5]) {
+    const x = X(a), z1 = Z(7), z2 = Z(1041);
+    const f = new THREE.Mesh(new THREE.PlaneGeometry(z2 - z1, 3.5), mats.chain); f.rotation.y = Math.PI / 2; f.position.set(x, 3.75, (z1 + z2) / 2);
+    f.material.map.repeat.set((z2 - z1) / 2, 3.5 / 2); g.add(f);
+    for (let z = z1; z <= z2; z += 8) B(0.15, 3.6, 0.15, mats.rail, x, 3.8, z, g);
   }
-  // a couple of trees
-  for (const [x, z] of [[-6, Z(1038) + 3], [34, Z(1038) + 3]]) {
-    addMesh(new THREE.CylinderGeometry(0.35, 0.5, 9, 8), mats.pot, x, 4.5, z, g);
-    addMesh(new THREE.SphereGeometry(4, 12, 10), mats.plant, x, 11, z, g);
-  }
+  // front: corner piers and a full-width black bar gate (centre leaf slid open)
+  for (const a of [10, 540]) B(1.4, 6.6, 1.4, mats.white, X(a), 3.3, Z(1041), g);
+  colliders[0].push([X(7), Z(1038), X(16), Z(1044)], [X(534), Z(1038), X(543), Z(1044)]);
+  const gz = Z(1041), gx1 = X(16), gx2 = X(534), leaf = (gx2 - gx1) / 3;
+  const gateLeaf = (x0, z) => {
+    const h = 6.2;
+    B(leaf, 0.18, 0.18, mats.rail, x0 + leaf / 2, h, z, g);
+    B(leaf, 0.18, 0.18, mats.rail, x0 + leaf / 2, 0.35, z, g);
+    for (const e of [x0 + 0.09, x0 + leaf - 0.09]) B(0.18, h, 0.18, mats.rail, e, h / 2, z, g);
+    for (let x = x0 + 0.35; x < x0 + leaf - 0.2; x += 0.3) B(0.07, h - 0.4, 0.07, mats.rail, x, h / 2, z, g, false);
+    colliders[0].push([x0, z - 0.2, x0 + leaf, z + 0.2]);
+  };
+  gateLeaf(gx1, gz); gateLeaf(gx1 + 2 * leaf, gz); gateLeaf(gx1 + 2 * leaf - 0.4, gz + 0.45); // centre leaf slid behind the right one
+  B(gx2 - gx1, 0.12, 0.3, mats.rail, (gx1 + gx2) / 2, 0.06, gz + 0.2, g, false); // track
+
+  // neighbours, trees and street lights
+  const hood = buildNeighbourhood({ group: g, colliders: colliders[0], envMap: skyEnv, litMaterials });
+  hood.house(-32, -2.6, -2, 58, 3, 1, 0);
+  hood.house(30.2, 60, -2, 58, 2, 1, 1);
+  hood.house(-63, -33.5, -2, 58, 2, 1, 2);
+  hood.house(61, 91, -2, 58, 3, 1, 3);
+  hood.house(-94, -64.5, -2, 58, 2, 1, 5);
+  hood.house(92, 121, -2, 58, 2, 1, 6);
+  const az = roadZ + 32;
+  [[-94, -64, 2], [-62, -33, 3], [-31, -2, 2], [0, 29, 3], [31, 60, 2], [62, 91, 2], [93, 122, 3]].forEach(([a, b, f], i) => hood.house(a, b, az, az + 56, f, -1, i + 2));
+  [[-63, -33], [-31, -2], [0, 29], [31, 60]].forEach(([a, b], i) => hood.house(a, b, -64, -6, 2, -1, i + 4));
+  for (const x of [-62, -22, 48, 88]) streetLight(g, x, roadZ - 1.2, 1, litMaterials);
+  [[-14, roadZ - 2.5], [44, roadZ - 2.5], [74, roadZ - 2.5], [-46, roadZ - 2.5], [-20, roadZ + 28.5], [16, roadZ + 28.5], [52, roadZ + 28.5], [88, roadZ + 28.5]].forEach(([x, z], i) => tree(g, x, z, 0.9 + (i % 3) * 0.12, i + 3));
 }
 
 // ---------------------------------------------------------------- furniture helpers
 const R = (lvl, a, b, c, d) => { const x1 = X(a, lvl), x2 = X(c, lvl), z1 = Z(b), z2 = Z(d); return { lvl, x1, z1, x2, z2, cx: (x1 + x2) / 2, cz: (z1 + z2) / 2, w: x2 - x1, d: z2 - z1, y: lvl * FH }; };
 const lb = (g, w, h, d, mat, x, y, z) => { const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat); m.position.set(x, y, z); g.add(m); return m; };
-const lc = (g, rt, rb, h, mat, x, y, z, seg = 20) => { const m = new THREE.Mesh(new THREE.CylinderGeometry(rt, rb, h, seg), mat); m.position.set(x, y, z); g.add(m); return m; };
+const rb = (g, w, h, d, rad, mat, x, y, z) => {
+  const r0 = Math.min(rad, w / 2 - 0.01, h / 2 - 0.01, d / 2 - 0.01);
+  const m = new THREE.Mesh(new RoundedBoxGeometry(w, h, d, 3, Math.max(0.01, r0)), mat); m.position.set(x, y, z); g.add(m); return m;
+};
+const lc = (g, rt, rbot, h, mat, x, y, z, seg = 24) => { const m = new THREE.Mesh(new THREE.CylinderGeometry(rt, rbot, h, seg), mat); m.position.set(x, y, z); g.add(m); return m; };
 const ROT = { n: 0, s: Math.PI, e: -Math.PI / 2, w: Math.PI / 2 };
-// Build furniture in a local frame where -z is the "back" (headboard / backrest / wall side).
 function place(r, back, build, collide = true) {
   const g = new THREE.Group(), ew = back === 'e' || back === 'w';
   build(g, ew ? r.d : r.w, ew ? r.w : r.d);
   g.rotation.y = ROT[back]; g.position.set(r.cx, r.y, r.cz);
-  g.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+  g.traverse((o) => { if (o.isMesh && !o.userData.noShadow && !o.material.transparent) { o.castShadow = true; o.receiveShadow = true; } });
   groups[r.lvl].add(g);
   if (collide) colliders[r.lvl].push([r.x1, r.z1, r.x2, r.z2]);
   return g;
 }
-let bedI = 0;
-const bed = (r, back) => { const col = M(bedColors[bedI++ % bedColors.length], { map: TEX.fabric, roughness: 0.95 }); place(r, back, (g, W, L) => {
-  lb(g, W, 1.0, L, mats.laminateDark, 0, 0.5, 0);
-  lb(g, W - 0.2, 0.7, L - 0.3, mats.mattress, 0, 1.35, 0.05);
-  lb(g, W - 0.05, 0.28, L * 0.62, col, 0, 1.78, L * 0.17);
-  lb(g, W + 0.02, 0.9, 0.08, col, 0, 1.3, L / 2 - 0.02 + 0.03);
-  for (const s of [-1, 1]) lb(g, W * 0.4, 0.35, 1.0, mats.pillow, (s * W) / 4.4, 1.85, -L / 2 + 0.95);
-  lb(g, W + 0.2, 3.8, 0.3, mats.laminateDark, 0, 1.9, -L / 2 + 0.15);
-  lb(g, W - 0.3, 2.2, 0.08, col, 0, 2.6, -L / 2 + 0.33);
-}); };
-const nightstand = (r) => place(r, 'n', (g, W, L) => {
-  lb(g, W, 1.9, L, mats.laminate, 0, 0.95, 0);
-  lc(g, 0.15, 0.2, 0.9, mats.white, 0, 2.35, 0); lc(g, 0.35, 0.5, 0.6, mats.lamp, 0, 3.0, 0);
-});
-const wardrobe = (r, back) => place(r, back, (g, W, L) => {
-  lb(g, W, 7.2, L, mats.laminate, 0, 3.6, 0);
-  const n = Math.max(2, Math.round(W / 1.6));
-  for (let i = 1; i < n; i++) lb(g, 0.03, 7.0, 0.04, mats.laminateDark, -W / 2 + (W * i) / n, 3.6, L / 2 + 0.01);
-  for (let i = 0; i < n; i++) lb(g, 0.06, 1.0, 0.08, mats.chrome, -W / 2 + (W * (i + 0.5)) / n + (i % 2 ? -0.3 : 0.3), 3.8, L / 2 + 0.04);
-  lb(g, W, 0.04, 0.04, mats.laminateDark, 0, 5.8, L / 2 + 0.01);
-});
-const rug = (r, mat = mats.rug) => { const m = B(r.w, 0.03, r.d, mat, r.cx, r.y + 0.03, r.cz, groups[r.lvl], false); m.castShadow = false; };
-const sofa = (r, back, arms = [1, 1]) => place(r, back, (g, W, L) => {
-  lb(g, W, 1.25, L, mats.sofa, 0, 0.62, 0);
-  lb(g, W - 0.9, 0.35, L - 0.8, mats.sofaCush, 0, 1.42, 0.25);
-  lb(g, W, 1.7, 0.65, mats.sofa, 0, 2.05, -L / 2 + 0.33);
-  if (arms[0]) lb(g, 0.45, 2.0, L, mats.sofa, -W / 2 + 0.22, 1.0, 0);
-  if (arms[1]) lb(g, 0.45, 2.0, L, mats.sofa, W / 2 - 0.22, 1.0, 0);
-  const n = Math.max(1, Math.round(W / 2.2));
-  for (let i = 0; i < n; i++) lb(g, W / n - 0.3, 1.2, 0.35, mats.sofaCush, -W / 2 + (W * (i + 0.5)) / n, 2.05, -L / 2 + 0.8);
-});
-const table = (r, mat = mats.navy) => place(r, 'n', (g, W, L) => {
-  lb(g, W, 0.12, L, mat, 0, 1.45, 0);
-  for (const sx of [-1, 1]) for (const sz of [-1, 1]) lb(g, 0.12, 1.4, 0.12, mats.laminateDark, sx * (W / 2 - 0.15), 0.7, sz * (L / 2 - 0.15));
-  lb(g, W - 0.3, 0.06, L - 0.3, mats.laminateDark, 0, 0.4, 0);
-});
-const tv = (r, back) => place(r, back, (g, W, L) => {
-  lb(g, W, 1.4, L * 0.9, mats.laminateDark, 0, 0.7, -L * 0.05);
-  lb(g, Math.min(4.4, W * 0.75), 2.5, 0.12, mats.screen, 0, 4.4, -L / 2 + 0.1);
-  lb(g, Math.min(4.6, W * 0.78), 2.65, 0.06, mats.black, 0, 4.4, -L / 2 + 0.05);
-  lb(g, 1.6, 0.4, 0.8, mats.black, -W * 0.25, 1.6, 0); // set-top box / speaker
-  lc(g, 0.45, 0.35, 0.9, mats.pot, W / 2 - 0.5, 1.85, 0, 12); lc(g, 0.9, 0.5, 1.6, mats.plant, W / 2 - 0.5, 3.0, 0, 10);
-});
-const counter = (r) => {
-  const g = groups[r.lvl];
-  B(r.w, 2.7, r.d, mats.laminate, r.cx, r.y + 1.35, r.cz, g);
-  B(r.w + 0.05, 0.12, r.d + 0.05, mats.granite, r.cx, r.y + 2.76, r.cz, g);
-  B(r.w, 0.35, r.d - 0.1, mats.black, r.cx, r.y + 0.17, r.cz - 0.02, g); // plinth shadow
-  colliders[r.lvl].push([r.x1, r.z1, r.x2, r.z2]);
-};
-const uppers = (r) => { const g = groups[r.lvl]; B(r.w, 2.2, r.d, mats.laminateDark, r.cx, r.y + 6.0, r.cz, g); };
-const sink = (lvl, px, py, horiz = true) => {
-  const x = X(px, lvl), z = Z(py), y = lvl * FH + 2.83, g = groups[lvl];
-  B(horiz ? 2.6 : 1.5, 0.04, horiz ? 1.5 : 2.6, mats.steel, x, y, z, g, false);
-  B(horiz ? 1.1 : 1.1, 0.05, horiz ? 1.1 : 1.1, mats.black, x - (horiz ? 0.55 : 0), y + 0.01, z - (horiz ? 0 : 0.55), g, false);
-  addMesh(new THREE.CylinderGeometry(0.05, 0.05, 1.0, 8), mats.chrome, x + (horiz ? 0.5 : 0), y + 0.5, z + (horiz ? -0.55 : 0), g);
-};
-const hob = (lvl, px, py, horiz = false) => {
-  const x = X(px, lvl), z = Z(py), y = lvl * FH + 2.84, g = groups[lvl];
-  B(horiz ? 2.4 : 1.7, 0.04, horiz ? 1.7 : 2.4, mats.black, x, y, z, g, false);
-  for (const [a, b] of [[-0.5, -0.4], [0.5, -0.4], [-0.5, 0.45], [0.5, 0.45]]) {
-    const [ox, oz] = horiz ? [a, b] : [b, a];
-    addMesh(new THREE.CylinderGeometry(0.28, 0.28, 0.05, 20), mats.steel, x + ox, y + 0.03, z + oz, g, false);
+const leafy = (g, x, y, z, s = 1) => {
+  for (let i = 0; i < 9; i++) {
+    const m = new THREE.Mesh(new THREE.IcosahedronGeometry((0.35 + rnd() * 0.25) * s, 0), i % 2 ? mats.leaf : mats.leaf2);
+    m.position.set(x + (rnd() - 0.5) * 0.9 * s, y + rnd() * 1.6 * s, z + (rnd() - 0.5) * 0.9 * s); m.scale.set(1, 0.55, 1.4);
+    m.rotation.set(rnd() * 3, rnd() * 3, rnd() * 3); g.add(m);
   }
 };
+let bedI = 0;
+const bed = (r, back) => { const throwMat = [mats.taupe, mats.greige, mats.linenWarm][bedI++ % 3]; place(r, back, (g, W, L) => {
+  rb(g, W, 1.0, L, 0.12, mats.linenWarm, 0, 0.55, 0);                       // upholstered base
+  rb(g, W - 0.15, 0.75, L - 0.35, 0.25, mats.linen, 0, 1.4, 0.08);          // mattress
+  rb(g, W + 0.05, 0.32, L * 0.66, 0.15, mats.linen, 0, 1.85, L * 0.16);     // duvet
+  rb(g, W + 0.12, 0.2, L * 0.24, 0.1, throwMat, 0, 1.98, L * 0.33);         // throw at the foot
+  for (const s of [-1, 1]) { rb(g, W * 0.42, 0.42, 1.0, 0.18, mats.linen, (s * W) / 4.3, 1.98, -L / 2 + 1.05); rb(g, W * 0.3, 0.38, 0.4, 0.17, throwMat, (s * W) / 6, 1.95, -L / 2 + 1.75); }
+  rb(g, W + 0.4, 4.2, 0.45, 0.2, mats.linenWarm, 0, 2.1, -L / 2 + 0.2);     // tall upholstered headboard
+}); };
+const nightstand = (r) => place(r, 'n', (g, W, L) => {
+  rb(g, W, 1.8, L, 0.08, mats.oakSolid, 0, 0.95, 0);
+  lb(g, W - 0.2, 0.02, 0.02, mats.oakDark, 0, 1.2, L / 2);
+  lc(g, 0.2, 0.28, 0.9, mats.pot, 0, 2.3, -0.1); lc(g, 0.38, 0.5, 0.65, mats.lamp, 0, 3.05, -0.1, 28);
+});
+const wardrobe = (r, back) => place(r, back, (g, W, L) => {
+  lb(g, W, 7.6, L, mats.matteWhite, 0, 3.8, 0);
+  const n = Math.max(2, Math.round(W / 1.7));
+  for (let i = 1; i < n; i++) lb(g, 0.025, 7.4, 0.04, mats.shadowLine, -W / 2 + (W * i) / n, 3.8, L / 2 + 0.01);
+  for (let i = 0; i < n; i++) lb(g, 0.04, 1.6, 0.06, mats.alu, -W / 2 + (W * (i + 0.5)) / n + (i % 2 ? -0.3 : 0.3) * Math.min(1, W / n / 1.4), 3.9, L / 2 + 0.04);
+  lb(g, W, 0.35, L - 0.1, mats.oakSolid, 0, 0.175, -0.05);
+});
+const rug = (r, mat = mats.rug) => { const g = groups[r.lvl]; B(r.w, 0.035, r.d, mat, r.cx, r.y + 0.03, r.cz, g, false); B(r.w + 0.3, 0.03, r.d + 0.3, mats.linenWarm, r.cx, r.y + 0.025, r.cz, g, false); };
+const sofa = (r, back, arms = [1, 1]) => place(r, back, (g, W, L) => {
+  rb(g, W, 1.1, L, 0.2, mats.sofa, 0, 0.75, 0);
+  lb(g, W - 0.2, 0.2, L - 0.2, mats.oakDark, 0, 0.1, 0);
+  const n = Math.max(1, Math.round(W / 2.6));
+  for (let i = 0; i < n; i++) {
+    const cw = (W - (arms[0] + arms[1]) * 0.55) / n, x = -W / 2 + arms[0] * 0.55 + cw * (i + 0.5);
+    rb(g, cw - 0.06, 0.45, L - 0.85, 0.2, mats.sofa, x, 1.5, 0.3);
+    rb(g, cw - 0.1, 1.25, 0.55, 0.25, mats.sofa, x, 2.2, -L / 2 + 0.7);
+  }
+  rb(g, W, 1.9, 0.5, 0.2, mats.sofa, 0, 1.55, -L / 2 + 0.25);
+  if (arms[0]) rb(g, 0.6, 1.9, L, 0.25, mats.sofa, -W / 2 + 0.3, 1.25, 0);
+  if (arms[1]) rb(g, 0.6, 1.9, L, 0.25, mats.sofa, W / 2 - 0.3, 1.25, 0);
+  for (const [x, m] of [[-W / 2 + 1.0, mats.taupe], [W / 2 - 1.0, mats.greige], [0, mats.linenWarm]]) { const c = rb(g, 1.3, 1.25, 0.4, 0.18, m, x, 2.35, -L / 2 + 1.05); c.rotation.x = -0.18; }
+});
+const coffeeTable = (r) => place(r, 'n', (g, W, L) => {
+  const rad = Math.min(W, L) / 2;
+  lc(g, rad, rad, 0.12, mats.white, 0, 1.45, 0, 40);
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(rad * 0.7, 0.04, 8, 40), mats.brass); ring.rotation.x = Math.PI / 2; ring.position.y = 0.06; g.add(ring);
+  for (let i = 0; i < 4; i++) { const a = (i / 4) * Math.PI * 2 + 0.6; const leg = lc(g, 0.03, 0.03, 1.4, mats.brass, Math.cos(a) * rad * 0.7, 0.75, Math.sin(a) * rad * 0.7, 8); leg.rotation.z = Math.cos(a) * 0.12; leg.rotation.x = -Math.sin(a) * 0.12; }
+  lc(g, 0.2, 0.16, 0.5, mats.pot, 0.3, 1.76, 0.1, 18); leafy(g, 0.3, 1.9, 0.1, 0.45);
+  lb(g, 0.9, 0.12, 0.65, mats.greige, -0.45, 1.58, -0.2); lb(g, 0.8, 0.1, 0.6, mats.linen, -0.45, 1.69, -0.2);
+});
+const tv = (r, back) => place(r, back, (g, W, L) => {
+  rb(g, W * 0.9, 1.1, L * 0.85, 0.06, mats.oakSolid, 0, 1.25, -L * 0.07);
+  for (let i = 1; i < 3; i++) lb(g, 0.02, 0.9, 0.02, mats.oakDark, -W * 0.45 + (W * 0.9 * i) / 3, 1.25, L * 0.36);
+  lb(g, Math.min(4.4, W * 0.72), 2.5, 0.08, mats.screen, 0, 4.3, -L / 2 + 0.08);
+  lc(g, 0.22, 0.3, 1.0, mats.potClay, W * 0.34, 2.3, 0, 18);
+  lb(g, 0.9, 0.25, 0.6, mats.taupe, -W * 0.3, 1.93, 0);
+  lc(g, 0.12, 0.12, 0.5, mats.pot, -W * 0.3, 2.3, 0, 12);
+});
+const counter = (r, hood = false) => {
+  const g = groups[r.lvl];
+  B(r.w, 2.75, r.d, mats.matteWhite, r.cx, r.y + 1.375, r.cz, g);
+  B(r.w + 0.06, 0.12, r.d + 0.06, mats.quartz, r.cx, r.y + 2.81, r.cz, g);
+  B(r.w - 0.1, 0.3, r.d - 0.1, mats.shadowLine, r.cx, r.y + 0.15, r.cz, g);
+  colliders[r.lvl].push([r.x1, r.z1, r.x2, r.z2]);
+  void hood;
+};
+const uppers = (r) => { const g = groups[r.lvl]; B(r.w, 2.3, r.d, mats.matteWhite, r.cx, r.y + 6.1, r.cz, g); B(r.w, 0.04, r.d, mats.lightOn, r.cx, r.y + 4.93, r.cz, g, false); };
+const sink = (lvl, px, py) => {
+  const x = X(px, lvl), z = Z(py), y = lvl * FH + 2.88, g = groups[lvl];
+  B(2.4, 0.03, 1.4, mats.steel, x, y, z, g, false);
+  B(1.9, 0.04, 1.1, mats.black, x, y + 0.005, z, g, false);
+  const tap = addMesh(new THREE.TorusGeometry(0.35, 0.04, 8, 16, Math.PI), mats.chrome, x, y + 0.6, z - 0.55, g);
+  tap.rotation.y = Math.PI / 2;
+  addMesh(new THREE.CylinderGeometry(0.04, 0.04, 0.6, 8), mats.chrome, x, y + 0.3, z - 0.55 - 0.35, g);
+};
+const hob = (lvl, px, py, horiz = false) => {
+  const x = X(px, lvl), z = Z(py), y = lvl * FH + 2.89, g = groups[lvl];
+  B(horiz ? 2.4 : 1.7, 0.03, horiz ? 1.7 : 2.4, mats.screen, x, y, z, g, false);
+  for (const [a, b] of [[-0.5, -0.4], [0.5, -0.4], [-0.5, 0.45], [0.5, 0.45]]) {
+    const [ox, oz] = horiz ? [a, b] : [b, a];
+    addMesh(new THREE.TorusGeometry(0.22, 0.015, 6, 24), mats.steel, x + ox, y + 0.02, z + oz, g, false).rotation.x = Math.PI / 2;
+  }
+};
+const chimney = (lvl, px, py, wallX) => { // wall-mounted hood above a hob on an x-wall
+  const x = X(px, lvl), z = Z(py), g = groups[lvl], y = lvl * FH;
+  const s = Math.sign(x - wallX);
+  B(1.8, 0.5, 2.6, mats.matteWhite, wallX + s * 0.95, y + 5.6, z, g);
+  B(0.9, 2.6, 1.0, mats.matteWhite, wallX + s * 0.5, y + 7.1, z, g);
+};
+const dining = (lvl, px, py) => {
+  const g = new THREE.Group(), x = X(px, lvl), z = Z(py);
+  lc(g, 1.35, 1.35, 0.1, mats.white, 0, 2.5, 0, 40); lc(g, 0.08, 0.08, 2.4, mats.oakDark, 0, 1.25, 0, 10); lc(g, 0.6, 0.6, 0.06, mats.oakDark, 0, 0.03, 0, 24);
+  for (const a of [0.5, Math.PI + 0.5]) {
+    const c = new THREE.Group(); c.position.set(Math.cos(a) * 1.7, 0, Math.sin(a) * 1.7); c.rotation.y = -a + Math.PI / 2;
+    rb(c, 1.25, 0.2, 1.2, 0.08, mats.linen, 0, 1.55, 0); rb(c, 1.25, 1.2, 0.15, 0.06, mats.oakSolid, 0, 2.3, -0.55);
+    for (const sx of [-1, 1]) for (const sz of [-1, 1]) lc(c, 0.04, 0.04, 1.5, mats.oakSolid, sx * 0.5, 0.75, sz * 0.48, 8);
+    g.add(c);
+  }
+  lc(g, 0.25, 0.18, 0.6, mats.pot, 0, 2.85, 0, 16); leafy(g, 0, 3.0, 0, 0.4);
+  g.position.set(x, lvl * FH, z); g.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+  groups[lvl].add(g); colliders[lvl].push([x - 1.4, z - 1.4, x + 1.4, z + 1.4]);
+};
 const wc = (r, back) => place(r, back, (g, W, L) => {
-  lc(g, 0.62, 0.48, 1.3, mats.porcelain, 0, 0.65, 0.25, 24);
-  lc(g, 0.66, 0.66, 0.08, mats.white, 0, 1.34, 0.25, 24);
-  lb(g, 1.4, 1.3, 0.55, mats.porcelain, 0, 1.75, -L / 2 + 0.3);
+  const bowl = rb(g, 1.25, 1.25, 1.75, 0.5, mats.porcelain, 0, 0.75, 0.3);
+  void bowl; rb(g, 1.3, 0.1, 1.8, 0.05, mats.white, 0, 1.42, 0.3);
+  rb(g, 1.5, 1.4, 0.55, 0.15, mats.porcelain, 0, 2.1, -L / 2 + 0.3);
+  lb(g, 0.3, 0.06, 0.15, mats.chrome, 0, 2.83, -L / 2 + 0.3);
 });
 const basin = (r, back) => place(r, back, (g, W, L) => {
-  lb(g, W, 0.45, L, mats.porcelain, 0, 2.55, 0);
-  lb(g, W * 0.7, 0.05, L * 0.6, mats.white, 0, 2.79, 0.05);
-  lc(g, 0.04, 0.04, 0.45, mats.chrome, 0, 2.95, -L / 2 + 0.12, 8);
-  lb(g, W, 2.0, 0.04, mats.mirror, 0, 4.4, -L / 2 + 0.02);
+  rb(g, W, 1.2, L, 0.06, mats.oakSolid, 0, 2.1, 0);
+  rb(g, W * 0.7, 0.35, L * 0.75, 0.15, mats.porcelain, 0, 2.85, 0.05);
+  lc(g, 0.04, 0.04, 0.55, mats.chrome, 0, 3.1, -L / 2 + 0.12, 8);
+  const mir = new THREE.Mesh(new THREE.CylinderGeometry(Math.min(W, 2.4) / 2, Math.min(W, 2.4) / 2, 0.04, 40), mats.mirror);
+  mir.rotation.x = Math.PI / 2; mir.position.set(0, 4.7, -L / 2 + 0.03); g.add(mir);
 }, false);
 const washer = (r, back) => place(r, back, (g, W, L) => {
   const s = Math.min(W, L, 2.0);
-  lb(g, s, 2.8, s, mats.white, 0, 1.4, 0);
-  const door = lc(g, 0.6, 0.6, 0.06, mats.carGlass, 0, 1.5, s / 2, 24); door.rotation.x = Math.PI / 2;
-  lb(g, s * 0.6, 0.15, 0.05, mats.black, -s * 0.1, 2.55, s / 2);
+  rb(g, s, 2.8, s, 0.08, mats.white, 0, 1.4, 0);
+  const door = lc(g, 0.62, 0.62, 0.06, mats.screen, 0, 1.45, s / 2, 32); door.rotation.x = Math.PI / 2;
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.66, 0.06, 8, 32), mats.chrome); ring.position.set(0, 1.45, s / 2 + 0.03); g.add(ring);
 });
-const shower = (lvl, px, py, wallDir) => {
+const shower = (lvl, px, py) => {
   const x = X(px, lvl), z = Z(py), g = groups[lvl];
-  const h = addMesh(new THREE.CylinderGeometry(0.3, 0.25, 0.08, 16), mats.chrome, x, lvl * FH + 6.8, z, g);
-  void wallDir; void h;
-  addMesh(new THREE.CylinderGeometry(0.03, 0.03, 0.8, 8), mats.chrome, x, lvl * FH + 7.2, z, g);
+  addMesh(new THREE.CylinderGeometry(0.42, 0.42, 0.04, 24), mats.chrome, x, lvl * FH + 7.1, z, g);
+  addMesh(new THREE.CylinderGeometry(0.03, 0.03, 0.8, 8), mats.chrome, x, lvl * FH + 7.5, z, g);
 };
-const car = (r, back, color) => place(r, back, (g, W, L) => {
-  const body = M(color, { metalness: 0.6, roughness: 0.3 });
-  lb(g, W, 1.5, L, body, 0, 1.35, 0);
-  lb(g, W - 0.1, 0.5, L * 0.32, body, 0, 2.2, -L * 0.3);  // boot
-  lb(g, W - 0.1, 0.4, L * 0.25, body, 0, 2.15, L * 0.36);  // bonnet
-  lb(g, W * 0.86, 1.3, L * 0.46, mats.carGlass, 0, 2.7, L * 0.02);
-  lb(g, W * 0.84, 0.1, L * 0.4, body, 0, 3.38, L * 0.0);
-  for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
-    const t = lc(g, 1.05, 1.05, 0.7, mats.tyre, sx * (W / 2 - 0.3), 1.05, sz * L * 0.31, 20); t.rotation.z = Math.PI / 2;
-    const rm = lc(g, 0.6, 0.6, 0.72, mats.rim, sx * (W / 2 - 0.3), 1.05, sz * L * 0.31, 12); rm.rotation.z = Math.PI / 2;
-  }
-  for (const sx of [-1, 1]) { lb(g, 0.9, 0.35, 0.05, mats.headlight, sx * W * 0.3, 1.75, L / 2 + 0.01); lb(g, 0.9, 0.3, 0.05, mats.tail, sx * W * 0.3, 1.85, -L / 2 - 0.01); }
-  lb(g, W * 0.4, 0.4, 0.06, mats.black, 0, 1.2, L / 2 + 0.02);
+const car = (r, back, type, color, metallic) => place(r, back, (g, W, L) => {
+  const c = makeCar({ type, color, envMap: skyEnv, metallic });
+  const s = Math.min(W / c.userData.size.W, L / c.userData.size.L) * 1.02;
+  c.scale.setScalar(s); g.add(c);
+  c.traverse((o) => { if (o.isMesh && o.material.transparent) o.userData.noShadow = true; });
 });
 const desk = (r, back) => place(r, back, (g, W, L) => {
-  lb(g, W, 0.1, L, mats.teak, 0, 2.5, 0);
-  for (const s of [-1, 1]) lb(g, 0.1, 2.45, L, mats.laminateDark, s * (W / 2 - 0.05), 1.22, 0);
-  lb(g, 1.6, 1.0, 0.08, mats.screen, 0, 3.2, -L / 2 + 0.25);
-  lb(g, 1.5, 0.12, 1.4, mats.black, 0, 1.55, L / 2 + 0.9); // chair seat
-  lb(g, 1.5, 1.6, 0.12, mats.black, 0, 2.35, L / 2 + 1.55);
+  rb(g, W, 0.12, L, 0.04, mats.oakSolid, 0, 2.5, 0);
+  for (const s of [-1, 1]) lb(g, 0.08, 2.45, L - 0.2, mats.alu, s * (W / 2 - 0.1), 1.22, 0);
+  lb(g, 1.7, 1.05, 0.06, mats.screen, 0, 3.25, -L / 2 + 0.25); lb(g, 0.1, 0.6, 0.1, mats.alu, 0, 2.8, -L / 2 + 0.3);
+  rb(g, 1.5, 0.18, 1.4, 0.07, mats.linen, 0, 1.6, L / 2 + 0.9); rb(g, 1.5, 1.4, 0.15, 0.07, mats.linen, 0, 2.4, L / 2 + 1.55);
 }, true);
-const plant = (lvl, px, py) => { const x = X(px, lvl), z = Z(py), y = lvl * FH, g = groups[lvl]; addMesh(new THREE.CylinderGeometry(0.6, 0.45, 1.4, 14), mats.pot, x, y + 0.7, z, g); addMesh(new THREE.SphereGeometry(1.0, 10, 8), mats.plant, x, y + 2.3, z, g); colliders[lvl].push([x - 0.6, z - 0.6, x + 0.6, z + 0.6]); };
-const shoeRack = (r, back) => place(r, back, (g, W, L) => { lb(g, W, 3, L, mats.laminate, 0, 1.5, 0); lb(g, W, 0.04, 0.03, mats.laminateDark, 0, 1.5, L / 2); });
+const plant = (lvl, px, py, big = true) => {
+  const x = X(px, lvl), z = Z(py), y = lvl * FH, g = groups[lvl];
+  addMesh(new THREE.CylinderGeometry(0.55, 0.42, 1.3, 24), mats.pot, x, y + 0.65, z, g);
+  const grp = new THREE.Group(); leafy(grp, 0, 1.6, 0, big ? 1.5 : 1); grp.position.set(x, y, z);
+  grp.traverse((o) => { if (o.isMesh) o.castShadow = true; }); g.add(grp);
+  addMesh(new THREE.CylinderGeometry(0.03, 0.04, 1.6, 6), mats.oakDark, x, y + 1.9, z, g);
+  colliders[lvl].push([x - 0.6, z - 0.6, x + 0.6, z + 0.6]);
+};
+let artI = 0;
+// framed print on a wall: (lvl, centre px, py, side the art faces: n/s/e/w, width ft)
+const art = (lvl, px, py, faces, w = 2.4, h = 3, y = 5.2) => {
+  const g = new THREE.Group(), tex = artTexture(artI++);
+  lb(g, w + 0.18, h + 0.18, 0.08, mats.oakDark, 0, 0, 0);
+  const p = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshStandardMaterial({ map: tex, roughness: 0.9 })); p.position.z = 0.045; g.add(p);
+  g.position.set(X(px, lvl), lvl * FH + y, Z(py)); g.rotation.y = { s: 0, n: Math.PI, e: Math.PI / 2, w: -Math.PI / 2 }[faces];
+  groups[lvl].add(g);
+};
+const shoeRack = (r, back) => place(r, back, (g, W, L) => { rb(g, W, 3, L, 0.05, mats.oakSolid, 0, 1.5, 0); lb(g, W, 0.02, 0.03, mats.oakDark, 0, 1.5, L / 2); });
 
 // ---------------------------------------------------------------- furnish: ground floor
-// Kitchen: L-shaped counter (left wall + top wall), sink under-top, hob below the window
 counter(R(0, 52, 57, 88, 200)); counter(R(0, 88, 57, 232, 93));
-uppers(R(0, 92, 57, 232, 77)); sink(0, 150, 76, true); hob(0, 70, 130, false);
-// Living hall: L sofa on the left wall, coffee table, wall TV on the bedroom wall
-sofa(R(0, 54, 300, 82, 420), 'w', [0, 1]); sofa(R(0, 54, 270, 120, 300), 'n', [1, 1]);
-table(R(0, 96, 318, 128, 372)); rug(R(0, 88, 300, 190, 400));
-tv(R(0, 214, 285, 232, 390), 'e'); plant(0, 210, 440);
-// Master bedroom
-bed(R(0, 263, 62, 355, 172), 'n'); nightstand(R(0, 240, 62, 260, 84)); nightstand(R(0, 358, 62, 378, 84));
-wardrobe(R(0, 474, 60, 500, 172), 'e'); rug(R(0, 252, 140, 368, 200), mats.rug2);
-// Bedroom
+uppers(R(0, 92, 57, 232, 77)); sink(0, 150, 76); hob(0, 70, 130, false); dining(0, 160, 150);
+sofa(R(0, 54, 300, 84, 420), 'w', [0, 1]); sofa(R(0, 54, 268, 124, 300), 'n', [1, 1]);
+coffeeTable(R(0, 100, 322, 140, 362)); rug(R(0, 90, 296, 196, 404));
+tv(R(0, 214, 285, 232, 390), 'e'); plant(0, 212, 445); art(0, 53, 360, 'e', 3.2, 2.4);
+bed(R(0, 260, 62, 358, 172), 'n'); nightstand(R(0, 238, 62, 258, 84)); nightstand(R(0, 360, 62, 380, 84));
+wardrobe(R(0, 474, 60, 500, 172), 'e'); rug(R(0, 248, 145, 372, 205), mats.rug2); art(0, 238, 120, 'e', 2.4, 3.0, 5.4);
 bed(R(0, 262, 268, 350, 372), 'n'); nightstand(R(0, 240, 268, 259, 288)); nightstand(R(0, 353, 268, 372, 288));
-wardrobe(R(0, 382, 268, 409, 378), 'e'); rug(R(0, 252, 340, 362, 398), mats.rug2);
-// Toilets
-wc(R(0, 452, 210, 482, 248), 'n'); washer(R(0, 440, 322, 478, 359), 's'); basin(R(0, 486, 300, 500, 326), 'e'); shower(0, 494, 283);
-wc(R(0, 444, 430, 474, 468), 's'); basin(R(0, 466, 366, 494, 380), 'n'); shower(0, 494, 416);
-// Parking: three cars facing the gates
-car(R(0, 58, 770, 152, 1000), 'n', 0xf1f1ee); car(R(0, 222, 770, 316, 1000), 'n', 0x9ea3a8); car(R(0, 386, 770, 480, 1000), 'n', 0x9b1d22);
+wardrobe(R(0, 382, 268, 409, 378), 'e'); rug(R(0, 252, 345, 362, 402), mats.rug2); art(0, 306, 264, 's', 2.2, 2.8, 6.3); plant(0, 395, 445, false);
+wc(R(0, 452, 210, 482, 248), 'n'); washer(R(0, 440, 322, 478, 359), 's'); basin(R(0, 480, 300, 500, 330), 'e'); shower(0, 494, 283);
+wc(R(0, 444, 430, 474, 468), 's'); basin(R(0, 462, 366, 496, 382), 'n'); shower(0, 494, 416);
+car(R(0, 60, 768, 166, 1012), 'n', 'suv', 0xf4f4f2, 0.1);
+car(R(0, 218, 768, 322, 1012), 's', 'sedan', 0xf0f0ee, 0.1);
+car(R(0, 376, 768, 484, 1012), 'n', 'suv', 0x101113, 0.35);
 
 // ---------------------------------------------------------------- furnish: first floor (right-plan coordinates)
 counter(R(1, 717, 57, 753, 200)); counter(R(1, 753, 57, 897, 93));
-uppers(R(1, 757, 57, 897, 77)); sink(1, 818, 76, true); hob(1, 735, 130, false);
-sofa(R(1, 719, 300, 747, 420), 'w', [0, 1]); sofa(R(1, 719, 270, 785, 300), 'n', [1, 1]);
-table(R(1, 761, 320, 793, 375)); rug(R(1, 753, 300, 855, 400)); tv(R(1, 879, 285, 897, 390), 'e');
-bed(R(1, 932, 62, 1022, 172), 'n'); nightstand(R(1, 908, 62, 928, 84)); nightstand(R(1, 1025, 62, 1045, 84));
-wardrobe(R(1, 1139, 60, 1165, 172), 'e'); rug(R(1, 920, 140, 1035, 200), mats.rug2);
+uppers(R(1, 757, 57, 897, 77)); sink(1, 818, 76); hob(1, 735, 130, false); dining(1, 828, 150);
+sofa(R(1, 719, 300, 749, 420), 'w', [0, 1]); sofa(R(1, 719, 268, 789, 300), 'n', [1, 1]);
+coffeeTable(R(1, 765, 322, 805, 362)); rug(R(1, 753, 296, 858, 404)); tv(R(1, 879, 285, 897, 390), 'e');
+plant(1, 877, 445); art(1, 718, 360, 'e', 3.2, 2.4);
+bed(R(1, 930, 62, 1026, 172), 'n'); nightstand(R(1, 906, 62, 926, 84)); nightstand(R(1, 1029, 62, 1049, 84));
+wardrobe(R(1, 1139, 60, 1165, 172), 'e'); rug(R(1, 918, 145, 1040, 205), mats.rug2); art(1, 903, 120, 'e', 2.4, 3.0, 5.4);
 bed(R(1, 928, 268, 1016, 372), 'n'); nightstand(R(1, 906, 268, 925, 288)); nightstand(R(1, 1019, 268, 1038, 288));
-wardrobe(R(1, 1050, 268, 1077, 378), 'e');
-wc(R(1, 1128, 266, 1158, 304), 'n'); washer(R(1, 1100, 370, 1140, 413), 's'); basin(R(1, 1151, 320, 1165, 346), 'e'); shower(1, 1159, 312);
-wc(R(1, 1108, 505, 1138, 541), 's'); basin(R(1, 1132, 422, 1160, 436), 'n'); shower(1, 1159, 500);
+wardrobe(R(1, 1050, 268, 1077, 378), 'e'); art(1, 972, 264, 's', 2.2, 2.8, 6.3);
+wc(R(1, 1128, 266, 1158, 304), 'n'); washer(R(1, 1100, 370, 1140, 413), 's'); basin(R(1, 1147, 318, 1165, 348), 'e'); shower(1, 1159, 312);
+wc(R(1, 1108, 505, 1138, 541), 's'); basin(R(1, 1128, 422, 1162, 438), 'n'); shower(1, 1159, 500);
 desk(R(1, 1088, 548, 1160, 566), 'n');
-shoeRack(R(1, 719, 478, 735, 540), 'w');
+shoeRack(R(1, 719, 478, 735, 540), 'w'); plant(1, 730, 590, false);
 // Flat B
-sofa(R(1, 975, 640, 1001, 760), 'e', [1, 0]); sofa(R(1, 935, 610, 1001, 640), 'n', [1, 1]);
-table(R(1, 928, 675, 962, 735)); rug(R(1, 905, 650, 975, 770)); tv(R(1, 802, 700, 818, 790), 'w'); plant(1, 990, 825);
-wc(R(1, 737, 716, 767, 754), 'n'); basin(R(1, 784, 728, 798, 754), 'e'); shower(1, 720, 800);
-bed(R(1, 778, 905, 895, 1000), 'e'); nightstand(R(1, 877, 884, 895, 902)); nightstand(R(1, 877, 1003, 895, 1021));
-wardrobe(R(1, 713, 848, 741, 918), 'w'); rug(R(1, 760, 920, 840, 990), mats.rug2);
-bed(R(1, 1035, 688, 1160, 800), 'e'); nightstand(R(1, 1145, 668, 1165, 686)); nightstand(R(1, 1145, 802, 1165, 820));
-wardrobe(R(1, 1012, 610, 1120, 636), 'n'); rug(R(1, 1020, 700, 1100, 790), mats.rug2);
+sofa(R(1, 973, 640, 1001, 762), 'e', [1, 0]); sofa(R(1, 931, 610, 1001, 640), 'n', [1, 1]);
+coffeeTable(R(1, 925, 680, 965, 720)); rug(R(1, 900, 650, 978, 772)); tv(R(1, 802, 700, 818, 790), 'w'); plant(1, 988, 822);
+art(1, 940, 610, 's', 2.6, 1.9);
+wc(R(1, 737, 716, 767, 754), 'n'); basin(R(1, 782, 726, 798, 756), 'e'); shower(1, 720, 800);
+bed(R(1, 776, 905, 895, 1000), 'e'); nightstand(R(1, 877, 884, 895, 902)); nightstand(R(1, 877, 1003, 895, 1021));
+wardrobe(R(1, 713, 848, 741, 918), 'w'); rug(R(1, 758, 920, 840, 990), mats.rug2); art(1, 895, 952, 'w', 2.4, 1.5, 6.7);
+bed(R(1, 1033, 688, 1160, 800), 'e'); nightstand(R(1, 1145, 668, 1165, 686)); nightstand(R(1, 1145, 802, 1165, 820));
+wardrobe(R(1, 1012, 610, 1120, 636), 'n'); rug(R(1, 1018, 700, 1100, 790), mats.rug2); art(1, 1164, 744, 'w', 2.4, 1.5, 6.7);
 counter(R(1, 901, 882, 937, 1027)); counter(R(1, 937, 1000, 1075, 1027));
-uppers(R(1, 901, 890, 920, 990)); hob(1, 919, 930, false); sink(1, 990, 1013, true);
-wc(R(1, 1115, 985, 1145, 1025), 's'); washer(R(1, 1124, 884, 1165, 930), 'e'); basin(R(1, 1079, 948, 1093, 974), 'w'); shower(1, 1159, 960);
+uppers(R(1, 901, 890, 920, 900)); hob(1, 919, 930, false); chimney(1, 919, 930, X(899, 1) + 0.2); sink(1, 990, 1013);
+wc(R(1, 1115, 985, 1145, 1025), 's'); washer(R(1, 1124, 884, 1165, 930), 'e'); basin(R(1, 1079, 946, 1095, 976), 'w'); shower(1, 1159, 960);
 
-// ---------------------------------------------------------------- lighting
-const hemi = new THREE.HemisphereLight(0xdfeaff, 0x8a7a66, 1.0);
+// ---------------------------------------------------------------- lighting (kept deliberately soft)
+const hemi = new THREE.HemisphereLight(0xdfeaff, 0xb59c80, 0.45);
 scene.add(hemi);
-const sun = new THREE.DirectionalLight(0xfff0d8, 3.0);
-const center = new THREE.Vector3(X(276), 0, Z(540));
-sun.position.set(center.x - 45, 70, center.z + 50); sun.target.position.copy(center);
+const sun = new THREE.DirectionalLight(0xfff0dc, 2.6);
+const center = new THREE.Vector3(X(276), 0, Z(560));
+sun.position.set(center.x - 50, 75, center.z + 60); sun.target.position.copy(center);
 sun.castShadow = true;
-sun.shadow.mapSize.set(isTouch ? 1536 : 2048, isTouch ? 1536 : 2048);
-Object.assign(sun.shadow.camera, { left: -45, right: 45, top: 45, bottom: -45, near: 10, far: 220 });
-sun.shadow.bias = -0.0006; sun.shadow.normalBias = 0.04;
+{ const ms = LOWQ ? 1024 : isTouch ? 2048 : 4096; sun.shadow.mapSize.set(ms, ms); }
+Object.assign(sun.shadow.camera, { left: -55, right: 55, top: 55, bottom: -55, near: 10, far: 260 });
+sun.shadow.bias = -0.0004; sun.shadow.normalBias = 0.05; sun.shadow.radius = 3;
 scene.add(sun, sun.target);
-// A fixed pool of point lights is re-assigned to the ceiling fixtures nearest the camera,
-// so the shader light count stays constant (important for phones).
 const POOL = 8, pool = [];
-for (let i = 0; i < POOL; i++) { const l = new THREE.PointLight(0xffe4c4, 0, 30, 2); scene.add(l); pool.push(l); }
+for (let i = 0; i < POOL; i++) { const l = new THREE.PointLight(0xffd9b0, 0, 22, 2); scene.add(l); pool.push(l); }
 let night = false;
 function assignLights(lvlHint) {
   const p = camera.position;
@@ -644,17 +791,65 @@ function assignLights(lvlHint) {
   for (let i = 0; i < POOL; i++) {
     const s = sorted[i]?.s; if (!s) { pool[i].intensity = 0; continue; }
     pool[i].position.set(s.x, s.y, s.z);
-    pool[i].intensity = s.power * (night ? 75 : 38);
+    pool[i].intensity = s.power * (night ? 34 : 7);
   }
 }
 function setNight(v) {
   night = v;
-  sun.intensity = v ? 0.0 : 3.0; hemi.intensity = v ? 0.05 : 1.0;
-  scene.background.copy(v ? NIGHT_SKY : DAY_SKY); scene.fog.color.copy(v ? NIGHT_SKY : DAY_SKY);
-  mats.lightOn.emissiveIntensity = v ? 2.5 : 0.6;
+  sun.intensity = v ? 0 : 2.6; hemi.intensity = v ? 0.05 : 0.45;
+  scene.environmentIntensity = v ? 0.08 : 0.7;
+  scene.background = v ? nightSky : daySky;
+  scene.fog.color.copy(v ? NIGHT_FOG : HORIZON);
+  mats.lightOn.emissiveIntensity = v ? 1.6 : 0.35;
+  mats.lamp.emissiveIntensity = v ? 1.0 : 0.18;
+  mats.facadeLight.emissiveIntensity = v ? 2.5 : 0.6;
+  for (const m of litMaterials) m.emissiveIntensity = v ? 1.4 : 0;
   document.getElementById('bNight').classList.toggle('on', v);
   document.getElementById('bNight').textContent = v ? 'Day' : 'Night';
 }
+
+// ---------------------------------------------------------------- merge static geometry
+// Thousands of small meshes become one draw call per material, which keeps phones smooth.
+function mergeStatic(root) {
+  root.updateMatrixWorld(true);
+  const buckets = new Map(), remove = [];
+  const add = (o, mat, g) => {
+    const key = mat.uuid + (o.castShadow ? 's' : 'n') + (o.receiveShadow ? 'r' : '') + (o.renderOrder || 0);
+    let b = buckets.get(key);
+    if (!b) buckets.set(key, (b = { mat, cast: o.castShadow, recv: o.receiveShadow, order: o.renderOrder, geos: [] }));
+    b.geos.push(g);
+  };
+  root.traverse((o) => {
+    if (!o.isMesh || o.isSprite) return;
+    const g = o.geometry.index ? o.geometry.toNonIndexed() : o.geometry.clone();
+    g.applyMatrix4(o.matrixWorld);
+    for (const name of Object.keys(g.attributes)) if (!['position', 'normal', 'uv'].includes(name)) g.deleteAttribute(name);
+    if (!g.attributes.normal) g.computeVertexNormals();
+    if (!g.attributes.uv) g.setAttribute('uv', new THREE.Float32BufferAttribute(new Float32Array(g.attributes.position.count * 2), 2));
+    g.morphAttributes = {};
+    if (Array.isArray(o.material)) { // split multi-material boxes face by face
+      for (const grp of g.groups) {
+        const part = new THREE.BufferGeometry();
+        for (const name of ['position', 'normal', 'uv']) {
+          const at = g.attributes[name], n = at.itemSize;
+          part.setAttribute(name, new THREE.Float32BufferAttribute(at.array.slice(grp.start * n, (grp.start + grp.count) * n), n));
+        }
+        add(o, o.material[grp.materialIndex], part);
+      }
+      g.dispose();
+    } else { g.clearGroups(); add(o, o.material, g); }
+    remove.push(o);
+  });
+  for (const o of remove) o.parent.remove(o);
+  for (const b of buckets.values()) {
+    const merged = mergeGeometries(b.geos, false);
+    b.geos.forEach((g) => g.dispose());
+    if (!merged) continue;
+    const m = new THREE.Mesh(merged, b.mat); m.castShadow = b.cast; m.receiveShadow = b.recv; m.renderOrder = b.order; m.frustumCulled = false;
+    root.add(m);
+  }
+}
+for (const g of [...groups, roofGroup, siteGroup]) mergeStatic(g);
 
 // ---------------------------------------------------------------- room labels (overview)
 const seenLabels = new Set();
@@ -671,7 +866,7 @@ for (const r of ROOMS) {
 }
 
 // ---------------------------------------------------------------- controls
-const player = { x: X(150), z: Z(1150), h: 0, yaw: 0, pitch: 0.12 };
+const player = { x: X(270), z: Z(1128), h: 0, yaw: 0, pitch: 0.14 };
 let camH = EYE;
 const keys = {};
 addEventListener('keydown', (e) => { keys[e.code] = true; if (e.code === 'KeyM') toggleMap(); });
@@ -856,5 +1051,5 @@ requestAnimationFrame(() => { $('loading').style.display = 'none'; });
 frame();
 
 // hooks for automated screenshots / debugging
-window.walkthrough = { step, groundAt, X, Z, teleport, setMode, setView, setNight, player, rooms: roomMenu, camera, orbit,
+window.walkthrough = { renderer, scene, step, groundAt, X, Z, teleport, setMode, setView, setNight, player, rooms: roomMenu, camera, orbit,
   look(x, z, h, yaw, pitch) { setMode('walk'); Object.assign(player, { x, z, h, yaw, pitch }); camH = h + EYE; } };
