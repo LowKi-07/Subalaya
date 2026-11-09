@@ -32,7 +32,7 @@ Then open http://localhost:8000. To deploy, import the repo into Vercel or Netli
 - `index.html` holds the page and its controls.
 - `vendor/` holds Three.js r170 and a few of its add-ons (MIT, see `vendor/THREE-LICENSE`).
 
-Static meshes are merged by material at load time, which brings it to about 150 draw calls so it runs smoothly on phones. Add `?lowq` to the URL for smaller shadow maps.
+Static meshes are merged by material at load time, which brings it to about 150 draw calls so it runs smoothly on phones. Ambient occlusion (GTAO) and anti-aliasing run as a post-processing pass. Add `?noao` to the URL to turn ambient occlusion off on slow devices, or `?lowq` for smaller shadow maps.
 
 ## Assumptions (not in the plan)
 

@@ -43,6 +43,22 @@ function extrude(points, depth, bevel, curveSeg = 24) {
   } };
 }
 
+// Narrow the greenhouse above the beltline (tumblehome) and round the corners in plan view.
+function sculpt(geo, P) {
+  const p = geo.attributes.position, belt = P.glass[0][1] - 0.15, L = P.L;
+  for (let i = 0; i < p.count; i++) {
+    const y = p.getY(i), z = p.getZ(i);
+    let k = 1;
+    if (y > belt) k -= Math.min(0.16, (y - belt) * 0.085);
+    const e = Math.max(0, (Math.abs(z) - (L / 2 - 1.8)) / 1.8);
+    k -= e * e * 0.11;
+    p.setX(i, p.getX(i) * k);
+  }
+  geo.computeVertexNormals();
+  return geo;
+}
+const narrowAt = (P, y) => 1 - Math.min(0.16, Math.max(0, y - (P.glass[0][1] - 0.15)) * 0.085);
+
 export function makeCar({ type = 'suv', color = 0xf2f2f0, envMap = null, metallic = 0.15 } = {}) {
   const P = PROFILES[type], g = new THREE.Group();
   const dark = new THREE.Color(color).getHSL({}).l < 0.2;
@@ -65,11 +81,11 @@ export function makeCar({ type = 'suv', color = 0xf2f2f0, envMap = null, metalli
   s.lineTo(wheelX - arch, clear); s.lineTo(-wheelX + arch, clear); s.lineTo(-wheelX + arch, wy);
   s.absarc(-wheelX, wy, arch, 0, Math.PI, false);
   s.lineTo(-wheelX - arch, clear); s.lineTo(P.body[0][0], clear); s.closePath();
-  const body = new THREE.Mesh(shape.done(), paint); g.add(body);
+  const body = new THREE.Mesh(sculpt(shape.done(), P), paint); g.add(body);
 
   // side glass, slightly proud of the body sides
   const gl = extrude(P.glass, W + 0.02, 0, 4); gl.s.closePath();
-  g.add(new THREE.Mesh(gl.done(), glass));
+  g.add(new THREE.Mesh(sculpt(gl.done(), P), glass));
   // windscreen and rear window as panels lying on the profile
   const panel = ([a, b], width, out) => {
     const dx = b[0] - a[0], dy = b[1] - a[1], len = Math.hypot(dx, dy);
@@ -79,11 +95,11 @@ export function makeCar({ type = 'suv', color = 0xf2f2f0, envMap = null, metalli
     m.rotation.x = -Math.atan2(dy, dx);
     g.add(m);
   };
-  panel(P.shield, W - 0.75, 0.27); panel(P.rear, W - 1.0, 0.22);
+  panel(P.shield, (W - 0.75) * narrowAt(P, (P.shield[0][1] + P.shield[1][1]) / 2), 0.27); panel(P.rear, (W - 1.0) * narrowAt(P, (P.rear[0][1] + P.rear[1][1]) / 2), 0.22);
   // body-coloured pillars over the side glass
   for (const z of P.pillars) for (const sx of [-1, 1]) {
     const p = new THREE.Mesh(new THREE.BoxGeometry(0.04, 1.4, 0.32), paint);
-    p.position.set(sx * (W / 2 + 0.02), (P.glass[0][1] + P.glass[1][1]) / 2 + 0.05, z); g.add(p);
+    const py = (P.glass[0][1] + P.glass[1][1]) / 2 + 0.05; p.position.set(sx * (W / 2 + 0.02) * narrowAt(P, py), py, z); p.rotation.z = sx * 0.13; g.add(p);
   }
   // door shut lines and handles
   for (const sx of [-1, 1]) {
@@ -94,7 +110,7 @@ export function makeCar({ type = 'suv', color = 0xf2f2f0, envMap = null, metalli
       const h = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.12, 0.55), chrome); h.position.set(sx * (W / 2 + 0.03), 3.45, z); g.add(h);
     }
     const mirror = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.38, 0.5), paint);
-    mirror.position.set(sx * (W / 2 + 0.25), P.glass[0][1] + 0.15, P.glass[3][0] - 0.25); g.add(mirror);
+    mirror.position.set(sx * (W / 2 * narrowAt(P, P.glass[0][1] + 0.15) + 0.25), P.glass[0][1] + 0.15, P.glass[3][0] - 0.25); g.add(mirror);
   }
   // lower cladding and bumpers
   const clad = type === 'suv' ? trim : paint;
