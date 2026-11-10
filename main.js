@@ -335,7 +335,7 @@ function wall(lvl, dir, c, a, b, t, ops = [], ext = 0, accent = 0) {
 }
 
 // ---- Ground floor (left plan)
-wall(0, 'h', 51, 40, 512, T_EXT, [[265, 345, 'W']], +1);
+wall(0, 'h', 51, 40, 512, T_EXT, [[142, 212, 'K'], [265, 345, 'W']], +1);
 wall(0, 'v', 46, 45, 478, T_EXT, [[105, 158, 'K']], +1);
 wall(0, 'v', 506, 45, 478, T_EXT, [[155, 205, 'W'], [268, 298, 'V'], [400, 432, 'V']], -1);
 wall(0, 'h', 472, 40, 512, T_EXT, [[76, 128, 'D', 's-'], [132, 208, 'W']], -1);
@@ -347,7 +347,7 @@ wall(0, 'h', 205, 413, 506, T_INT);
 wall(0, 'h', 363, 413, 506, T_INT);
 
 // ---- First floor (right plan, x offset 665px)
-wall(1, 'h', 51, 705, 1177, T_EXT, [[932, 1010, 'W']], +1);
+wall(1, 'h', 51, 705, 1177, T_EXT, [[807, 877, 'K'], [932, 1010, 'W']], +1);
 wall(1, 'v', 711, 45, 1035, T_EXT, [[95, 158, 'K'], [490, 598, 'K'], [614, 704, 'K'], [755, 790, 'V'], [925, 1010, 'W']], +1);
 wall(1, 'v', 1171, 45, 1035, T_EXT, [[155, 205, 'W'], [297, 333, 'V'], [485, 520, 'V'], [700, 780, 'W'], [975, 1010, 'V']], -1);
 wall(1, 'h', 1029, 705, 1177, T_EXT, [[760, 860, 'F'], [920, 995, 'F']], -1);
@@ -775,14 +775,30 @@ const counter = (r, hood = false) => {
   void hood;
 };
 const uppers = (r) => { const g = groups[r.lvl]; B(r.w, 2.3, r.d, mats.matteWhite, r.cx, r.y + 6.1, r.cz, g); B(r.w, 0.04, r.d, mats.lightOn, r.cx, r.y + 4.93, r.cz, g, false); };
-const sink = (lvl, px, py) => {
+const sink = (lvl, px, py, d = -1) => { // d: which side (z) the tap and wall are on
   const x = X(px, lvl), z = Z(py), y = lvl * FH + 2.88, g = groups[lvl];
   B(2.4, 0.03, 1.4, mats.steel, x, y, z, g, false);
   B(1.9, 0.04, 1.1, mats.black, x, y + 0.005, z, g, false);
-  const tap = addMesh(new THREE.TorusGeometry(0.35, 0.04, 8, 16, Math.PI), mats.chrome, x, y + 0.6, z - 0.55, g);
+  const tap = addMesh(new THREE.TorusGeometry(0.35, 0.04, 8, 16, Math.PI), mats.chrome, x, y + 0.6, z + d * 0.55, g);
   tap.rotation.y = Math.PI / 2;
-  addMesh(new THREE.CylinderGeometry(0.04, 0.04, 0.6, 8), mats.chrome, x, y + 0.3, z - 0.55 - 0.35, g);
+  addMesh(new THREE.CylinderGeometry(0.04, 0.04, 0.6, 8), mats.chrome, x, y + 0.3, z + d * 0.9, g);
 };
+// open walnut shelf unit against a wall, with a few jars and boxes
+const shelfUnit = (r, back) => place(r, back, (g, W, L) => {
+  const H = 6.6;
+  for (const sx of [-1, 1]) lb(g, 0.1, H, L, mats.walnut, sx * (W / 2 - 0.05), H / 2, 0);
+  lb(g, W, H, 0.05, mats.walnut, 0, H / 2, -L / 2 + 0.03);
+  const items = [mats.pot, mats.rust, mats.linenWarm, mats.olive, mats.white, mats.taupe];
+  for (let i = 0; i < 6; i++) {
+    const y = 0.3 + i * ((H - 0.4) / 5);
+    lb(g, W - 0.15, 0.1, L, mats.walnut, 0, y, 0);
+    if (i === 5) continue;
+    for (let k = 0; k < 2; k++) {
+      const m = items[(i * 2 + k) % items.length], x = (k ? 1 : -1) * W * 0.22, hgt = 0.45 + ((i + k) % 3) * 0.2;
+      if ((i + k) % 2) lc(g, 0.2, 0.2, hgt, m, x, y + 0.05 + hgt / 2, 0, 16); else lb(g, 0.55, hgt, 0.5, m, x, y + 0.05 + hgt / 2, 0);
+    }
+  }
+});
 const hob = (lvl, px, py, horiz = false) => {
   const x = X(px, lvl), z = Z(py), y = lvl * FH + 2.89, g = groups[lvl];
   B(horiz ? 2.4 : 1.7, 0.03, horiz ? 1.7 : 2.4, mats.screen, x, y, z, g, false);
@@ -865,8 +881,8 @@ const art = (lvl, px, py, faces, w = 2.4, h = 3, y = 5.2) => {
 const shoeRack = (r, back) => place(r, back, (g, W, L) => { rb(g, W, 3, L, 0.05, mats.oakSolid, 0, 1.5, 0); lb(g, W, 0.02, 0.03, mats.oakDark, 0, 1.5, L / 2); });
 
 // ---------------------------------------------------------------- furnish: ground floor
-counter(R(0, 52, 57, 88, 200)); counter(R(0, 88, 57, 232, 93));
-uppers(R(0, 92, 57, 232, 77)); sink(0, 150, 76); hob(0, 70, 130, false);
+counter(R(0, 52, 57, 88, 200)); counter(R(0, 88, 164, 178, 200)); // counter and sink under the serving hatch
+sink(0, 133, 181, 1); hob(0, 70, 120, false); shelfUnit(R(0, 90, 57, 128, 79), 'n');
 sofa(R(0, 54, 232, 106, 390), 'w', [1, 0], mats.sofaGreige); sofa(R(0, 106, 232, 170, 284), 'n', [0, 1], mats.sofaGreige);
 coffeeTable(R(0, 120, 304, 172, 356)); rug(R(0, 96, 222, 212, 382));
 tv(R(0, 214, 250, 232, 355), 'e'); plant(0, 212, 445); art(0, 53, 300, 'e', 3.2, 2.4);
@@ -885,8 +901,8 @@ car(R(0, 218, 768, 322, 1012), 's', 'sedan', 0x0b0c0e, 0.4);
 car(R(0, 376, 768, 484, 1012), 'n', 'suv', 0x0b0c0e, 0.4);
 
 // ---------------------------------------------------------------- furnish: first floor (right-plan coordinates)
-counter(R(1, 717, 57, 753, 200)); counter(R(1, 753, 57, 897, 93));
-uppers(R(1, 757, 57, 897, 77)); sink(1, 818, 76); hob(1, 735, 130, false);
+counter(R(1, 717, 57, 753, 200)); counter(R(1, 753, 164, 843, 200));
+sink(1, 798, 181, 1); hob(1, 735, 120, false); shelfUnit(R(1, 755, 57, 793, 79), 'n');
 sofa(R(1, 719, 232, 771, 390), 'w', [1, 0], mats.sofa); sofa(R(1, 771, 232, 835, 284), 'n', [0, 1], mats.sofa);
 coffeeTable(R(1, 785, 304, 837, 356)); rug(R(1, 761, 222, 877, 382)); tv(R(1, 879, 250, 897, 355), 'e');
 plant(1, 877, 445); art(1, 718, 300, 'e', 3.2, 2.4);
