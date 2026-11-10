@@ -232,7 +232,7 @@ function curtainPanel(width, height, folds) {
 // ---------------------------------------------------------------- walls, doors, windows
 // type: D door, M main double door, O open doorway, W window (with curtains), K kitchen window,
 // F front-facade window (large, black frame), V ventilator
-const OPEN = { D: [0, 7], M: [0, 7.5], O: [0, 7], W: [3, 7], K: [3.5, 7], F: [2.5, 7.6], V: [6, 7.5], P: [3.4, 7.2] };
+const OPEN = { D: [0, 7], M: [0, 7.5], O: [0, 7.2], W: [3, 7], K: [3.5, 7], F: [2.5, 7.6], V: [6, 7.5], P: [3.4, 7.2] };
 const T_EXT = 0.75, T_INT = 0.4;
 
 function wallMaterial(dir, ext, accent) {
@@ -311,9 +311,11 @@ function wall(lvl, dir, c, a, b, t, ops = [], ext = 0, accent = 0) {
       }
     } else {
       const jt = t + 0.1;
-      put(o.s, o.s + 0.15, 0, head, 0, jt, mats.frameWood);
-      put(o.e - 0.15, o.e, 0, head, 0, jt, mats.frameWood);
-      put(o.s, o.e, head - 0.15, head, 0, jt, mats.frameWood);
+      if (o.type !== 'O') { // plain openings have no frame
+        put(o.s, o.s + 0.15, 0, head, 0, jt, mats.frameWood);
+        put(o.e - 0.15, o.e, 0, head, 0, jt, mats.frameWood);
+        put(o.s, o.e, head - 0.15, head, 0, jt, mats.frameWood);
+      }
       if (o.type !== 'O') {
         const side = o.hinge[1] === '-' ? -1 : 1;
         const leaves = o.type === 'M' ? [['s', (o.e - o.s - 0.3) / 2], ['e', (o.e - o.s - 0.3) / 2]] : [[o.hinge[0], o.e - o.s - 0.3]];
@@ -336,7 +338,7 @@ function wall(lvl, dir, c, a, b, t, ops = [], ext = 0, accent = 0) {
 wall(0, 'h', 51, 40, 512, T_EXT, [[265, 345, 'W']], +1);
 wall(0, 'v', 46, 45, 478, T_EXT, [[105, 158, 'K']], +1);
 wall(0, 'v', 506, 45, 478, T_EXT, [[155, 205, 'W'], [268, 298, 'V'], [400, 432, 'V']], -1);
-wall(0, 'h', 472, 40, 512, T_EXT, [[68, 128, 'M', 's-'], [132, 208, 'W']], -1);
+wall(0, 'h', 472, 40, 512, T_EXT, [[76, 128, 'D', 's-'], [132, 208, 'W']], -1);
 wall(0, 'h', 203, 46, 234, T_INT, [[64, 176, 'P'], [184, 228, 'O']], 0, +1);
 wall(0, 'v', 234, 51, 472, T_INT, [[208, 255, 'D', 's+'], [405, 455, 'D', 'e+']]);
 wall(0, 'h', 260, 234, 413, T_INT);
@@ -476,13 +478,14 @@ for (const r of ROOMS) {
     }
   }
   const mx1 = X(250), mx2 = px2, mz1 = Z(840), mz2 = pz2;
-  B(mx2 - mx1, 9.5, mz2 - mz1, mats.wallExt, (mx1 + mx2) / 2, 2 * FH + 4.75, (mz1 + mz2) / 2, roofGroup);
-  B(mx2 - mx1 + 0.6, 0.5, mz2 - mz1 + 0.6, mats.wallExt, (mx1 + mx2) / 2, 2 * FH + 9.75, (mz1 + mz2) / 2, roofGroup);
-  for (let y = 2 * FH + 1.5; y < 2 * FH + 9; y += 1.25) B(mx2 - mx1 + 0.02, 0.05, 0.03, mats.groove, (mx1 + mx2) / 2, y, mz2 + 0.02, roofGroup, false);
+  // front right: a low parapet wall, same height as the railing beside it
+  B(mx2 - mx1, 4.4, 0.5, mats.wallExt, (mx1 + mx2) / 2, 2 * FH + 2.2, mz2 - 0.25, roofGroup);
+  B(mx2 - mx1 + 0.2, 0.15, 0.7, mats.wallExt, (mx1 + mx2) / 2, 2 * FH + 4.47, mz2 - 0.25, roofGroup);
+  for (let y = 2 * FH + 1.5; y < 2 * FH + 4.2; y += 1.25) B(mx2 - mx1 + 0.02, 0.05, 0.03, mats.groove, (mx1 + mx2) / 2, y, mz2 + 0.02, roofGroup, false);
   const rz = pz2 + 1.0;
   B(mx1 - px1, 0.12, 0.12, mats.rail, (px1 + mx1) / 2, 2 * FH + 4.4, rz, roofGroup);
   for (let x = px1 + 0.2; x < mx1; x += 0.42) B(0.06, 3.2, 0.06, mats.rail, x, 2 * FH + 2.8, rz, roofGroup, false);
-  B(0.12, 0.12, mz1 - pz1 + 0.5, mats.rail, px1 + 0.3, 2 * FH + 4.4, (pz1 + mz1) / 2, roofGroup);
+  void mz1;
 
   // beams and columns of the open parking
   const beam = (a, b, c, d) => { const x1 = X(a), x2 = X(c), z1 = Z(b), z2 = Z(d); B(x2 - x1, 1.25, z2 - z1, mats.wallExt, (x1 + x2) / 2, WH - 0.625, (z1 + z2) / 2, g1); };
@@ -534,13 +537,16 @@ const STAIR = { x1: 188, x2: 411, y1: 478, ymid: 542, y2: 606, f1s: 240, land: 3
   const w1 = (STAIR.land - STAIR.f1s) / 9, w2 = (STAIR.land - STAIR.x1) / 9;
   for (let k = 0; k < 9; k++) {
     const a = X(STAIR.f1s + k * w1), b = X(STAIR.f1s + (k + 1) * w1), top = ((k + 1) * 5) / 9;
-    B(b - a, top, zm - z1, plaster, (a + b) / 2, top / 2, (z1 + zm) / 2, g);
+    const th = Math.min(top, 1.1); // open underneath: each step is a slab, not a solid block
+    B(b - a, th, zm - z1, plaster, (a + b) / 2, top - th / 2, (z1 + zm) / 2, g);
   }
   const la = X(STAIR.land), lb = X(STAIR.x2);
-  B(lb - la, 5, z2 - z1, plaster, (la + lb) / 2, 2.5, (z1 + z2) / 2, g);
+  B(lb - la, 0.6, z2 - z1, plaster, (la + lb) / 2, 5 - 0.3, (z1 + z2) / 2, g);
+  // three pillars carry the staircase along its open front edge
+  for (const [px, h] of [[STAIR.x1 + 8, 8.9], [STAIR.land + 6, 4.4], [STAIR.x2 - 8, 4.4]]) B(0.85, h, 0.85, mats.white, X(px), h / 2, z2 - 0.45, g);
   for (let j = 0; j < 9; j++) {
     const b = X(STAIR.land - j * w2), a = X(STAIR.land - (j + 1) * w2), top = 5 + ((j + 1) * 5) / 9;
-    B(b - a, top, z2 - zm, plaster, (a + b) / 2, top / 2, (zm + z2) / 2, g);
+    B(b - a, 1.1, z2 - zm, plaster, (a + b) / 2, top - 0.55, (zm + z2) / 2, g);
   }
   const railLine = (xa, ya, za, xb, yb, zb, grp, posts = true) => {
     const dx = xb - xa, dy = yb - ya, dz = zb - za, L = Math.hypot(dx, dy, dz);
@@ -870,8 +876,8 @@ const shoeRack = (r, back) => place(r, back, (g, W, L) => { rb(g, W, 3, L, 0.05,
 // ---------------------------------------------------------------- furnish: ground floor
 counter(R(0, 52, 57, 88, 200)); counter(R(0, 88, 57, 232, 93));
 uppers(R(0, 92, 57, 232, 77)); sink(0, 150, 76); hob(0, 70, 130, false);
-sofa(R(0, 54, 232, 106, 390), 'w', [0, 1], mats.sofaGreige); sofa(R(0, 106, 338, 170, 390), 's', [1, 0], mats.sofaGreige);
-coffeeTable(R(0, 120, 262, 172, 314)); rug(R(0, 96, 222, 212, 382));
+sofa(R(0, 54, 232, 106, 390), 'w', [1, 0], mats.sofaGreige); sofa(R(0, 106, 232, 170, 284), 'n', [0, 1], mats.sofaGreige);
+coffeeTable(R(0, 120, 304, 172, 356)); rug(R(0, 96, 222, 212, 382));
 tv(R(0, 214, 250, 232, 355), 'e'); plant(0, 212, 445); art(0, 53, 300, 'e', 3.2, 2.4);
 bed(R(0, 260, 62, 358, 172), 'n'); nightstand(R(0, 238, 62, 258, 84)); nightstand(R(0, 360, 62, 380, 84));
 wardrobe(R(0, 474, 60, 500, 172), 'e'); rug(R(0, 248, 145, 372, 205), mats.rug2); art(0, 238, 120, 'e', 2.4, 3.0, 5.4);
@@ -884,14 +890,14 @@ wc(R(0, 444, 430, 474, 468), 's'); basin(R(0, 462, 366, 496, 382), 'n'); shower(
   for (let pz = 495; pz < 1030; pz += 34) B(X(130) - X(66), 0.06, 1.4, stone, (X(66) + X(130)) / 2, 0.03, Z(pz), g, false);
   B(X(122) - X(74), 0.04, 1.6, mats.greige, (X(74) + X(122)) / 2, 0.03, Z(486), g, false);
   plant(0, 58, 495, false); plant(0, 142, 495, false); }
-car(R(0, 218, 768, 322, 1012), 's', 'sedan', 0xf0f0ee, 0.1);
-car(R(0, 376, 768, 484, 1012), 'n', 'suv', 0x101113, 0.35);
+car(R(0, 218, 768, 322, 1012), 's', 'sedan', 0x0b0c0e, 0.4);
+car(R(0, 376, 768, 484, 1012), 'n', 'suv', 0x0b0c0e, 0.4);
 
 // ---------------------------------------------------------------- furnish: first floor (right-plan coordinates)
 counter(R(1, 717, 57, 753, 200)); counter(R(1, 753, 57, 897, 93));
 uppers(R(1, 757, 57, 897, 77)); sink(1, 818, 76); hob(1, 735, 130, false);
-sofa(R(1, 719, 232, 771, 390), 'w', [0, 1], mats.sofa); sofa(R(1, 771, 338, 835, 390), 's', [1, 0], mats.sofa);
-coffeeTable(R(1, 785, 262, 837, 314)); rug(R(1, 761, 222, 877, 382)); tv(R(1, 879, 250, 897, 355), 'e');
+sofa(R(1, 719, 232, 771, 390), 'w', [1, 0], mats.sofa); sofa(R(1, 771, 232, 835, 284), 'n', [0, 1], mats.sofa);
+coffeeTable(R(1, 785, 304, 837, 356)); rug(R(1, 761, 222, 877, 382)); tv(R(1, 879, 250, 897, 355), 'e');
 plant(1, 877, 445); art(1, 718, 300, 'e', 3.2, 2.4);
 bed(R(1, 930, 62, 1026, 172), 'n'); nightstand(R(1, 906, 62, 926, 84)); nightstand(R(1, 1029, 62, 1049, 84));
 wardrobe(R(1, 1139, 60, 1165, 172), 'e'); rug(R(1, 918, 145, 1040, 205), mats.rug2); art(1, 903, 120, 'e', 2.4, 3.0, 5.4);
@@ -985,8 +991,7 @@ function model(id, lvl, px, py, opts = {}) {
   }).catch((e) => console.warn('model', id, e));
 }
 // living rooms: accent leather armchair, oak side table, walnut slatted TV sideboard, vases
-for (const [lvl, cx, cy, face, sx, sy] of [[0, 186, 420, 'n', 70, 225], [1, 851, 420, 'n', 735, 225], [1, 840, 640, 'e', 1001, 670]]) {
-  model('modern_arm_chair_01', lvl, cx, cy, { face, rot: face === 'n' ? Math.PI + 0.6 : undefined });
+for (const [lvl, cx, cy, face, sx, sy] of [[0, 186, 420, 'n', 74, 408], [1, 851, 420, 'n', 739, 408], [1, 840, 640, 'e', 984, 664]]) {
   model('side_table_01', lvl, sx, sy, { scale: 0.95 });
   model('potted_plant_04', lvl, sx, sy, { y: 1.5, scale: 1.4, collide: false });
 }
@@ -1104,7 +1109,7 @@ for (const r of ROOMS) {
 }
 
 // ---------------------------------------------------------------- controls
-const player = { x: X(100), z: Z(1128), h: 0, yaw: 0, pitch: 0.1 };
+const player = { x: 5, z: 84, h: 0, yaw: -0.2, pitch: 0.12 }; // start across the street, looking at the front elevation
 let camH = EYE;
 const keys = {};
 addEventListener('keydown', (e) => { keys[e.code] = true; if (e.code === 'KeyM') toggleMap(); });
@@ -1194,12 +1199,15 @@ $('bRooms').addEventListener('click', () => { const p = $('rooms'); const on = p
 const roomMenu = [];
 {
   const seen = new Set(), panel = $('rooms');
-  for (const lvl of [0, 1, 2]) {
-    const h = document.createElement('h4'); h.textContent = ['Ground floor', 'First floor (2 flats)', 'Roof'][lvl]; panel.appendChild(h);
+  // Flat A is the rear flat (over the ground-floor house); Flat B sits over the parking.
+  const groupOf = (r) => (r.lvl === 0 ? 0 : r.lvl === 2 ? 3 : /Flat B|Study|Passage/.test(r.name) ? 2 : 1);
+  for (const grp of [0, 1, 2, 3]) {
+    const lvl = [0, 1, 1, 2][grp];
+    const h = document.createElement('h4'); h.textContent = ['Ground Floor', 'First Floor · Flat A', 'First Floor · Flat B', 'Roof'][grp]; panel.appendChild(h);
     ROOMS.forEach((r) => {
-      if (r.lvl !== lvl || seen.has(lvl + r.name) || r.name.startsWith('Kitchen passage')) return; seen.add(lvl + r.name);
+      if (groupOf(r) !== grp || seen.has(lvl + r.name) || r.name.startsWith('Kitchen passage')) return; seen.add(lvl + r.name);
       const b = document.createElement('button'); const ft = (v) => `${Math.floor(v)}'${Math.round((v % 1) * 12)}"`;
-      b.innerHTML = `${r.name} <small>${ft(r.x2 - r.x1)} × ${ft(r.z2 - r.z1)}</small>`;
+      b.innerHTML = `${r.name.replace(/ · Flat [AB]$/, '')} <small>${ft(r.x2 - r.x1)} × ${ft(r.z2 - r.z1)}</small>`;
       b.addEventListener('click', () => { teleport(roomMenu.indexOf(r)); panel.style.display = 'none'; $('bRooms').classList.remove('on'); });
       panel.appendChild(b); roomMenu.push(r);
     });

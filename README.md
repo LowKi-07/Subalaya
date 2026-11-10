@@ -38,7 +38,7 @@ Static meshes are merged by material at load time, which brings it to about 150 
 
 Scanned models, floor textures and the sky photo are from [Poly Haven](https://polyhaven.com) (CC0, free to use). They're packed to GLB with meshopt and WebP textures in `models/`, with the floor textures and HDR sky in `textures/`:
 
-- Models: modern_arm_chair_01, side_table_01, modern_wooden_cabinet, ceramic_vase_01, ceramic_vase_03, ceiling_fan, modern_ceiling_lamp_01, mid_century_lounge_chair, potted_plant_02, potted_plant_04, coffee_table_round_01, dining_chair_02, round_wooden_table_02.
+- Models: side_table_01, modern_wooden_cabinet, ceramic_vase_01, ceramic_vase_03, ceiling_fan, modern_ceiling_lamp_01, mid_century_lounge_chair, potted_plant_02, potted_plant_04.
 - Textures: wood_floor, marble_01.
 - Sky: kloofendal_48d_partly_cloudy_puresky (2K HDR).
 

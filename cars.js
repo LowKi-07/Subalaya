@@ -32,10 +32,18 @@ function contactShadow() {
   return shadowTex;
 }
 
-function extrude(points, depth, bevel, curveSeg = 24) {
+function extrude(points, depth, bevel, curveSeg = 24, round = 0) {
   const s = new THREE.Shape();
   s.moveTo(points[0][0], points[0][1]);
-  for (let i = 1; i < points.length; i++) s.lineTo(points[i][0], points[i][1]);
+  for (let i = 1; i < points.length; i++) {
+    const p = points[i], n = points[i + 1], q = points[i - 1];
+    if (!round || !n) { s.lineTo(p[0], p[1]); continue; }
+    // round each corner: stop short of it, then curve through to a point just past it
+    const la = Math.hypot(p[0] - q[0], p[1] - q[1]), lb = Math.hypot(n[0] - p[0], n[1] - p[1]);
+    const r = Math.min(round, la * 0.45, lb * 0.45);
+    s.lineTo(p[0] - ((p[0] - q[0]) / la) * r, p[1] - ((p[1] - q[1]) / la) * r);
+    s.quadraticCurveTo(p[0], p[1], p[0] + ((n[0] - p[0]) / lb) * r, p[1] + ((n[1] - p[1]) / lb) * r);
+  }
   return { s, done: () => {
     const geo = new THREE.ExtrudeGeometry(s, { depth, curveSegments: curveSeg, bevelEnabled: !!bevel, bevelThickness: bevel, bevelSize: bevel * 0.8, bevelSegments: 5 });
     geo.translate(0, 0, -depth / 2); geo.rotateY(-Math.PI / 2); geo.computeVertexNormals();
@@ -74,7 +82,7 @@ export function makeCar({ type = 'suv', color = 0xf2f2f0, envMap = null, metalli
   const { L, W, wheelR, wheelX, arch, clear } = P;
   const bev = 0.32, depth = W - 2 * bev;
   // body outline: profile points, then the underside with two wheel arches
-  const shape = extrude(P.body, depth, bev);
+  const shape = extrude(P.body, depth, bev, 24, 0.9);
   const s = shape.s, wy = wheelR;
   s.lineTo(wheelX + arch, clear); s.lineTo(wheelX + arch, wy);
   s.absarc(wheelX, wy, arch, 0, Math.PI, false);

@@ -80,8 +80,8 @@ export function buildNeighbourhood({ group, colliders, envMap, litMaterials }) {
     }
     // front yard paving, compound wall and gate
     floor(x1, Math.min(fz, front), x2, Math.max(fz, front), paver);
-    box(w, 3.5, 0.5, wall, cx - w * 0.3, 1.75, fz - face * 0.25);
-    const gate = box(w * 0.38, 4, 0.12, rail, cx + w * 0.2, 2, fz - face * 0.25);
+    box(w * 0.58, 3.5, 0.5, wall, x1 + w * 0.3, 1.75, fz - face * 0.25);
+    const gate = box(w * 0.38, 4, 0.12, rail, x1 + w * 0.79, 2, fz - face * 0.25);
     gate.castShadow = true;
     colliders.push([x1, Math.min(fz, fz - face * 0.5), x2, Math.max(fz, fz - face * 0.5)]);
     // a parked scooter/car silhouette now and then
