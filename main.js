@@ -348,7 +348,7 @@ wall(0, 'h', 363, 413, 506, T_INT);
 
 // ---- First floor (right plan, x offset 665px)
 wall(1, 'h', 51, 705, 1177, T_EXT, [[932, 1010, 'W']], +1);
-wall(1, 'v', 711, 45, 1035, T_EXT, [[95, 158, 'K'], [755, 790, 'V'], [925, 1010, 'W']], +1);
+wall(1, 'v', 711, 45, 1035, T_EXT, [[95, 158, 'K'], [490, 598, 'K'], [755, 790, 'V'], [925, 1010, 'W']], +1);
 wall(1, 'v', 1171, 45, 1035, T_EXT, [[155, 205, 'W'], [297, 333, 'V'], [485, 520, 'V'], [700, 780, 'W'], [975, 1010, 'V']], -1);
 wall(1, 'h', 1029, 705, 1177, T_EXT, [[760, 860, 'F'], [920, 995, 'F']], -1);
 wall(1, 'h', 203, 711, 899, T_INT, [[729, 841, 'P'], [849, 893, 'O']], 0, +1);
@@ -409,13 +409,6 @@ for (const r of ROOMS) {
   const base = r.lvl * FH;
   if (r.floor) {
     floorPlane(r.x1, r.z1, r.x2, r.z2, base + 0.012, floorMat[r.floor], groups[r.lvl]);
-    if (r.floor !== 'btile' && !r.extra.nolight) { // slim skirting
-      const g = groups[r.lvl], sk = 0.33, e = 0.04;
-      B(r.x2 - r.x1, sk, e, mats.white, r.cx, base + sk / 2, r.z1 + e / 2, g, false);
-      B(r.x2 - r.x1, sk, e, mats.white, r.cx, base + sk / 2, r.z2 - e / 2, g, false);
-      B(e, sk, r.z2 - r.z1, mats.white, r.x1 + e / 2, base + sk / 2, r.cz, g, false);
-      B(e, sk, r.z2 - r.z1, mats.white, r.x2 - e / 2, base + sk / 2, r.cz, g, false);
-    }
   }
   if (r.extra.nolight) continue;
   const spots = r.extra.lights ? r.extra.lights.map(([a, b]) => [X(a, r.lvl), Z(b)]) : [[r.cx, r.cz]];
