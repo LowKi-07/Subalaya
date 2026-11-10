@@ -157,7 +157,7 @@ const mats = {
   matteWhite: M(0xf1eee8, { roughness: 0.6 }), shadowLine: M(0xbdb6ab, { roughness: 1 }),
   quartz: new THREE.MeshStandardMaterial({ map: TEX.quartz, roughness: 0.25 }),
   steel: M(0xc8ccd0, { metalness: 0.9, roughness: 0.3 }), black: M(0x151515, { roughness: 0.35 }),
-  navy: M(0x24344f, { roughness: 0.9 }),
+  navy: M(0xd8c4a3, { roughness: 0.9 }), // kitchen accent wall (beige)
   polycarb: new THREE.MeshPhysicalMaterial({ color: 0xdfe9ee, roughness: 0.35, transparent: true, opacity: 0.55, side: THREE.DoubleSide }),
   screen: M(0x07080a, { roughness: 0.12, metalness: 0.3 }), mirror: new THREE.MeshStandardMaterial({ color: 0xe6eef2, metalness: 1, roughness: 0.03, envMap: roomEnv }),
   linen: new THREE.MeshStandardMaterial({ color: 0xf4f1eb, map: TEX.fabric, bumpMap: TEX.weave, bumpScale: 0.35, roughness: 0.95 }),
@@ -348,7 +348,7 @@ wall(0, 'h', 363, 413, 506, T_INT);
 
 // ---- First floor (right plan, x offset 665px)
 wall(1, 'h', 51, 705, 1177, T_EXT, [[932, 1010, 'W']], +1);
-wall(1, 'v', 711, 45, 1035, T_EXT, [[95, 158, 'K'], [490, 598, 'K'], [755, 790, 'V'], [925, 1010, 'W']], +1);
+wall(1, 'v', 711, 45, 1035, T_EXT, [[95, 158, 'K'], [490, 598, 'K'], [614, 704, 'K'], [755, 790, 'V'], [925, 1010, 'W']], +1);
 wall(1, 'v', 1171, 45, 1035, T_EXT, [[155, 205, 'W'], [297, 333, 'V'], [485, 520, 'V'], [700, 780, 'W'], [975, 1010, 'V']], -1);
 wall(1, 'h', 1029, 705, 1177, T_EXT, [[760, 860, 'F'], [920, 995, 'F']], -1);
 wall(1, 'h', 203, 711, 899, T_INT, [[729, 841, 'P'], [849, 893, 'O']], 0, +1);
@@ -632,7 +632,7 @@ const roadZ = Z(1041) + 6;
 
   // neighbours, trees and street lights
   const hood = buildNeighbourhood({ group: g, colliders: colliders[0], envMap: skyEnv, litMaterials });
-  hood.house(-32, -2.6, -2, 58, 3, 1, 0);
+  hood.house(-36, -9, -2, 58, 3, 1, 0); // set back so the lobby windows look onto open sky
   hood.house(30.2, 60, -2, 58, 2, 1, 1);
   hood.house(-63, -33.5, -2, 58, 2, 1, 2);
   hood.house(61, 91, -2, 58, 3, 1, 3);
@@ -760,8 +760,8 @@ const coffeeTable = (r) => place(r, 'n', (g, W, L) => {
   lc(g, rad, rad, 0.14, mats.walnut, 0, 1.4, 0, 48);
   lc(g, rad - 0.05, rad - 0.05, 0.02, mats.glass, 0, 1.48, 0, 48);
   lc(g, rad * 0.5, rad * 0.55, 1.3, mats.walnut, 0, 0.67, 0, 32);
-  lc(g, 0.2, 0.16, 0.5, mats.pot, 0.35, 1.72, 0.1, 18); leafy(g, 0.35, 1.85, 0.1, 0.45);
   lb(g, 0.9, 0.12, 0.65, mats.rust, -0.45, 1.53, -0.2); lb(g, 0.8, 0.1, 0.6, mats.linen, -0.45, 1.64, -0.2);
+  plantQueue.push(['plant_zz', r.lvl, r.cx + 0.4, r.cz + 0.15, { world: true, y: 1.49, h: 1.25, collide: false }]);
 });
 const tv = (r, back) => place(r, back, (g, W, L) => {
   lb(g, W * 0.95, 2.9, 0.12, mats.walnut, 0, 4.3, -L / 2 + 0.04); // walnut TV wall panel
@@ -847,12 +847,11 @@ const desk = (r, back) => place(r, back, (g, W, L) => {
   lb(g, 1.7, 1.05, 0.06, mats.screen, 0, 3.25, -L / 2 + 0.25); lb(g, 0.1, 0.6, 0.1, mats.alu, 0, 2.8, -L / 2 + 0.3);
   rb(g, 1.5, 0.18, 1.4, 0.07, mats.linen, 0, 1.6, L / 2 + 0.9); rb(g, 1.5, 1.4, 0.15, 0.07, mats.linen, 0, 2.4, L / 2 + 1.55);
 }, true);
+// Plants are scanned models; they're queued here and placed once the model loader exists.
+const plantQueue = [];
 const plant = (lvl, px, py, big = true) => {
-  const x = X(px, lvl), z = Z(py), y = lvl * FH, g = groups[lvl];
-  addMesh(new THREE.CylinderGeometry(0.55, 0.42, 1.3, 24), mats.pot, x, y + 0.65, z, g);
-  const grp = new THREE.Group(); leafy(grp, 0, 1.6, 0, big ? 1.5 : 1); grp.position.set(x, y, z);
-  grp.traverse((o) => { if (o.isMesh) o.castShadow = true; }); g.add(grp);
-  addMesh(new THREE.CylinderGeometry(0.03, 0.04, 1.6, 6), mats.oakDark, x, y + 1.9, z, g);
+  const x = X(px, lvl), z = Z(py);
+  plantQueue.push([big ? 'plant_banana' : 'plant_zz', lvl, x, z, { world: true, h: big ? 5.2 : 2.7, collide: false, rot: plantQueue.length * 1.3 }]);
   colliders[lvl].push([x - 0.6, z - 0.6, x + 0.6, z + 0.6]);
 };
 let artI = 0;
@@ -963,11 +962,13 @@ const loadModel = (id) => (modelCache[id] ||= gltf.loadAsync(`./models/${id}.glb
 const FACE = { s: 0, e: Math.PI / 2, n: Math.PI, w: -Math.PI / 2 }; // model front (+z) turned to face this way
 // opts: face, scale (default real size), fit [w, d] in ft to scale down into, y (base height), hang (top at ceiling), collide
 function model(id, lvl, px, py, opts = {}) {
-  const x = X(px, lvl), z = Z(py), base = lvl * FH;
+  const x = opts.world ? px : X(px, lvl), z = opts.world ? py : Z(py), base = lvl * FH;
   return loadModel(id).then((src) => {
     const m = src.clone();
     let k = M2FT * (opts.scale || 1);
     m.scale.setScalar(k); m.rotation.y = (FACE[opts.face] ?? opts.rot ?? 0);
+    if (opts.h) { const b0 = new THREE.Box3().setFromObject(m); m.scale.multiplyScalar(opts.h / (b0.max.y - b0.min.y)); }
+    if (opts.w) { const b0 = new THREE.Box3().setFromObject(m); m.scale.multiplyScalar(opts.w / Math.max(b0.max.x - b0.min.x, b0.max.z - b0.min.z)); }
     if (opts.fit) {
       const b = new THREE.Box3().setFromObject(m), sz = b.getSize(new THREE.Vector3());
       const f = Math.min(1, opts.fit[0] / sz.x, opts.fit[1] / sz.z); m.scale.multiplyScalar(f);
@@ -983,6 +984,7 @@ function model(id, lvl, px, py, opts = {}) {
     return m;
   }).catch((e) => console.warn('model', id, e));
 }
+for (const q of plantQueue) model(...q);
 // living rooms: accent leather armchair, oak side table, walnut slatted TV sideboard, vases
 for (const [lvl, cx, cy, face, sx, sy] of [[0, 186, 420, 'n', 74, 408], [1, 851, 420, 'n', 739, 408], [1, 840, 640, 'e', 984, 664]]) {
   model('side_table_01', lvl, sx, sy, { scale: 0.95 });
@@ -997,7 +999,7 @@ for (const [lvl, px, py, face, len] of [[0, 228, 302, 'w', 5.9], [1, 893, 302, '
   });
 }
 // ceiling fans in bedrooms and living halls (an Indian-home staple)
-for (const [lvl, px, py] of [[0, 142, 330], [0, 310, 150], [0, 324, 368], [1, 807, 330], [1, 975, 150], [1, 990, 368], [1, 900, 700], [1, 808, 960], [1, 1085, 744]]) model('ceiling_fan', lvl, px, py, { hang: true, scale: 0.9 });
+for (const [lvl, px, py] of [[0, 142, 330], [0, 310, 150], [0, 324, 368], [1, 807, 330], [1, 975, 150], [1, 990, 368], [1, 900, 700], [1, 808, 960], [1, 1085, 744]]) model('ceiling_fan_crompton', lvl, px, py, { hang: true, w: 4.2 });
 // globe pendants over each kitchen serving hatch
 for (const [lvl, px, py] of [[0, 95, 214], [0, 145, 214], [1, 760, 214], [1, 810, 214], [1, 926, 869]]) model('modern_ceiling_lamp_01', lvl, px, py, { hang: true, scale: 0.6 });
 // lounge chairs in the master bedrooms

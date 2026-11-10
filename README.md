@@ -38,9 +38,15 @@ Static meshes are merged by material at load time, which brings it to about 150 
 
 Scanned models, floor textures and the sky photo are from [Poly Haven](https://polyhaven.com) (CC0, free to use). They're packed to GLB with meshopt and WebP textures in `models/`, with the floor textures and HDR sky in `textures/`:
 
-- Models: side_table_01, modern_wooden_cabinet, ceramic_vase_01, ceramic_vase_03, ceiling_fan, modern_ceiling_lamp_01, mid_century_lounge_chair, potted_plant_02, potted_plant_04.
+- Models: side_table_01, modern_wooden_cabinet, ceramic_vase_01, ceramic_vase_03, modern_ceiling_lamp_01, mid_century_lounge_chair, potted_plant_02, potted_plant_04.
 - Textures: wood_floor, marble_01.
 - Sky: kloofendal_48d_partly_cloudy_puresky (2K HDR).
+
+Models from Sketchfab, supplied by the owner:
+
+- "ZZ Plant in Ceramic Pot | Crafted by jerovdl" (https://sketchfab.com/3d-models/zz-plant-in-ceramic-pot-crafted-by-jerovdl-544d4c1621254fa28144c2f1e27287a7) by Jerovdl, licensed under CC-BY-4.0.
+- "CROMPTON CEILING FAN" (https://sketchfab.com/3d-models/crompton-ceiling-fan-d2b2927735324187827242a1de9c85ef) by akhalas, licensed under CC-BY-4.0.
+- "Banana Plant With Pot" (https://sketchfab.com/3d-models/banana-plant-with-pot-789d665f88704393af11a1b64956d474) by GobyDiputra, under the Sketchfab Standard licence. That licence does not allow sharing the model file itself, so keep this repository private.
 
 ## Assumptions (not in the plan)
 
