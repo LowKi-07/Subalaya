@@ -632,9 +632,8 @@ const roadZ = Z(1041) + 6;
 
   // neighbours, trees and street lights
   const hood = buildNeighbourhood({ group: g, colliders: colliders[0], envMap: skyEnv, litMaterials });
-  hood.house(-36, -9, -2, 58, 3, 1, 0); // set back so the lobby windows look onto open sky
+  // the two plots on the left are left empty so the lobby windows look onto open sky
   hood.house(30.2, 60, -2, 58, 2, 1, 1);
-  hood.house(-63, -33.5, -2, 58, 2, 1, 2);
   hood.house(61, 91, -2, 58, 3, 1, 3);
   hood.house(-94, -64.5, -2, 58, 2, 1, 5);
   hood.house(92, 121, -2, 58, 2, 1, 6);
