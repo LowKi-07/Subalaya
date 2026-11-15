@@ -336,7 +336,7 @@ function wall(lvl, dir, c, a, b, t, ops = [], ext = 0, accent = 0) {
 
 // ---- Ground floor (left plan)
 wall(0, 'h', 51, 40, 512, T_EXT, [[142, 212, 'K'], [265, 345, 'W']], +1);
-wall(0, 'v', 46, 45, 478, T_EXT, [[105, 158, 'K']], +1);
+wall(0, 'v', 46, 45, 478, T_EXT, [], +1);
 wall(0, 'v', 506, 45, 478, T_EXT, [[155, 205, 'W'], [268, 298, 'V'], [400, 432, 'V']], -1);
 wall(0, 'h', 472, 40, 512, T_EXT, [[76, 128, 'D', 's-'], [132, 208, 'W']], -1);
 wall(0, 'h', 203, 46, 234, T_INT, [[64, 176, 'P'], [184, 228, 'O']], 0, +1);
@@ -348,7 +348,7 @@ wall(0, 'h', 363, 413, 506, T_INT);
 
 // ---- First floor (right plan, x offset 665px)
 wall(1, 'h', 51, 705, 1177, T_EXT, [[807, 877, 'K'], [932, 1010, 'W']], +1);
-wall(1, 'v', 711, 45, 1035, T_EXT, [[95, 158, 'K'], [490, 598, 'K'], [614, 704, 'K'], [755, 790, 'V'], [925, 1010, 'W']], +1);
+wall(1, 'v', 711, 45, 1035, T_EXT, [[490, 598, 'K'], [614, 704, 'K'], [755, 790, 'V'], [925, 1010, 'W']], +1);
 wall(1, 'v', 1171, 45, 1035, T_EXT, [[155, 205, 'W'], [297, 333, 'V'], [485, 520, 'V'], [700, 780, 'W'], [975, 1010, 'V']], -1);
 wall(1, 'h', 1029, 705, 1177, T_EXT, [[760, 860, 'F'], [920, 995, 'F']], -1);
 wall(1, 'h', 203, 711, 899, T_INT, [[729, 841, 'P'], [849, 893, 'O']], 0, +1);
@@ -558,6 +558,17 @@ const STAIR = { x1: 188, x2: 411, y1: 478, ymid: 542, y2: 606, f1s: 240, land: 3
   railLine(lb - 0.1, 8, z2 - 0.1, lb - 0.1, 8, z1 + 0.3, g);
   railLine(X(STAIR.land), 8, zm, X(STAIR.x1 + 4), 13, zm, g);
   railLine(X(STAIR.f1s), 3, zm - 0.05, X(STAIR.land), 8, zm - 0.05, g);
+  // smooth sloped soffit (waist slab) under each flight, so the underside isn't stepped
+  const soffit = (xLow, xHigh, yLow, zA, zB, drop, grp) => {
+    const sh = new THREE.Shape(), y0 = yLow - drop, y1 = yLow + 5 - drop, t = 0.8;
+    sh.moveTo(xLow, y0); sh.lineTo(xHigh, y1); sh.lineTo(xHigh, y1 + t); sh.lineTo(xLow, y0 + t); sh.closePath();
+    const geo = new THREE.ExtrudeGeometry(sh, { depth: zB - zA, bevelEnabled: false }); geo.translate(0, 0, zA);
+    addMesh(geo, mats.white, 0, 0, 0, grp);
+  };
+  soffit(X(STAIR.f1s), X(STAIR.land), 0, z1, zm, 1.1, g);
+  soffit(X(STAIR.land), X(STAIR.x1), 5, zm, z2, 1.1, g);
+  soffit(X(STAIR.f1s), X(STAIR.land), FH, z1, zm, 0.7, groups[1]);
+  soffit(X(STAIR.land), X(STAIR.x1), FH + 5, zm, z2, 0.7, groups[1]);
   // upper dog-leg: first-floor landing over the stair entry, flight 3 above flight 1, landing at 15ft, flight 4 to the terrace
   const g1 = groups[1], T = 0.7;
   B(X(STAIR.f1s) - X(STAIR.x1), 0.5, zm - z1, plaster, (X(STAIR.x1) + X(STAIR.f1s)) / 2, FH - 0.25, (z1 + zm) / 2, g1);
