@@ -7,7 +7,11 @@ rgb = np.load(sys.argv[1]).astype(np.float32)
 H, W, _ = rgb.shape
 # grow each UV island outwards so the denoiser and texture filtering never pull in black gaps
 mask = rgb.sum(axis=2) > 0
-for _ in range(12):
+# texels on an island's rim straddle the neighbouring wall or the gap, which shows up as dark seams: drop them
+core = mask.copy()
+for dy, dx in ((0, 1), (0, -1), (1, 0), (-1, 0)): core &= np.roll(mask, (dy, dx), axis=(0, 1))
+mask = core; rgb[~mask] = 0
+for _ in range(6):
     acc = np.zeros_like(rgb); cnt = np.zeros((H, W), np.float32)
     for dy, dx in ((0, 1), (0, -1), (1, 0), (-1, 0)):
         acc += np.roll(rgb * mask[..., None], (dy, dx), axis=(0, 1)); cnt += np.roll(mask, (dy, dx), axis=(0, 1))

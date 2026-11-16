@@ -43,19 +43,19 @@ The bake must be redone whenever the baked area's walls or furniture change, oth
 ```bash
 python3 -m http.server 8766 &
 node tools/export-scene.js scene.glb
-python3 tools/bake_lightmap.py scene.glb textures/sky_2k.hdr baked L0 2048 64 0.3 0.5 11.2 24.7
+python3 tools/bake_lightmap.py scene.glb textures/sky_2k.hdr baked L0 2048 128 0.3 0.5 11.2 24.7
 python3 tools/denoise_lightmap.py baked/L0_lm_raw.npy baked/L0_lm.jpg
 python3 tools/render_still.py scene.glb textures/sky_2k.hdr renders/living-hall.png 8.5 5.3 23.3 0.35 -0.12
 ```
 
-This needs `pip install bpy oidn pillow numpy` and Playwright. The bake takes about 11 minutes on 4 CPU cores.
+This needs `pip install bpy oidn pillow numpy` and Playwright. The bake takes about 12 minutes on 4 CPU cores.
 
 ## Assets
 
 Scanned models, floor textures and the sky photo are from [Poly Haven](https://polyhaven.com) (CC0, free to use). They're packed to GLB with meshopt and WebP textures in `models/`, with the floor textures and HDR sky in `textures/`:
 
 - Models: side_table_01, modern_wooden_cabinet, ceramic_vase_01, ceramic_vase_03, modern_ceiling_lamp_01, mid_century_lounge_chair, potted_plant_02, potted_plant_04.
-- Textures: wood_floor, marble_01.
+- Textures: wood_floor, marble_01, black_walnut_veneer_01, rough_linen (normal map).
 - Sky: kloofendal_48d_partly_cloudy_puresky (2K HDR).
 
 Models from Sketchfab, supplied by the owner:

@@ -37,7 +37,7 @@ const canvas = document.getElementById('c');
 const isTouch = matchMedia('(pointer: coarse)').matches;
 const params = new URLSearchParams(location.search), params_has = (k) => params.has(k);
 const LOWQ = params.has('lowq');
-const LM_GAIN = parseFloat(params.get('lm') || '1.3');
+const LM_GAIN = parseFloat(params.get('lm') || '1.6');
 let renderer;
 try { renderer = new THREE.WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true }); }
 catch (e) { document.getElementById('loading').textContent = 'WebGL is not available in this browser.'; throw e; }
@@ -1050,6 +1050,19 @@ for (const [px, py] of [[70, 980], [230, 980], [70, 700], [480, 300]]) model('po
   pbr('wood_floor', 5.58, floorMat.oak, 0.9);
   pbr('marble_01', 4.92, floorMat.marble, 0.8);
 }
+// real walnut veneer on doors, frames and furniture; woven linen relief on upholstery
+{
+  const tl = new THREE.TextureLoader(), aniso = renderer.capabilities.getMaxAnisotropy();
+  tl.load('./textures/walnut_veneer_diff.jpg', (t) => {
+    t.colorSpace = THREE.SRGBColorSpace; t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = aniso; t.center.set(0.5, 0.5); t.rotation = Math.PI / 2;
+    for (const [m, tint] of [[mats.walnut, 0x8f8078], [mats.doorWood, 0x9a8a80], [mats.frameWood, 0x857468], [mats.winWood, 0x8c7c70]]) { m.map = t; m.color.set(tint); m.needsUpdate = true; }
+    applyBaked();
+  });
+  tl.load('./textures/linen_nor.jpg', (t) => {
+    t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(5, 5); t.anisotropy = aniso;
+    for (const m of [mats.sofa, mats.sofaGreige, mats.sofaTaupe, mats.rust, mats.olive, mats.linen, mats.linenWarm, mats.taupe, mats.greige]) { m.bumpMap = null; m.normalMap = t; m.normalScale.set(0.9, 0.9); m.needsUpdate = true; }
+  });
+}
 // photographed sky (partly cloudy) for the background and for reflections on cars and glass
 new RGBELoader().load('./textures/sky_2k.hdr', (hdr) => {
   hdr.mapping = THREE.EquirectangularReflectionMapping;
@@ -1145,7 +1158,8 @@ function mergeStatic(root, tag) {
     const m = new THREE.Mesh(merged, b.mat); m.castShadow = b.cast; m.receiveShadow = b.recv; m.renderOrder = b.order; m.frustumCulled = false;
     // name each merged mesh so Blender bakes can be matched back; "_b" marks plain matte surfaces worth baking
     const mt = b.mat, lum = mt.emissive ? (mt.emissive.r + mt.emissive.g + mt.emissive.b) * (mt.emissiveIntensity ?? 1) : 1;
-    const bakeable = mt.isMeshStandardMaterial && !mt.isMeshPhysicalMaterial && !mt.transparent && !mt.alphaTest && mt.metalness < 0.3 && lum === 0;
+    const soft = mt.map === TEX.fabric || !!mt.bumpMap && mt.bumpMap !== TEX.oak; // upholstery, curtains, rugs: curved or thin, they bake badly
+    const bakeable = mt.isMeshStandardMaterial && !mt.isMeshPhysicalMaterial && !mt.transparent && !mt.alphaTest && mt.metalness < 0.3 && lum === 0 && !soft;
     m.name = `${tag}_${mergeCount++}${bakeable ? '_b' : ''}`;
     root.add(m);
   }

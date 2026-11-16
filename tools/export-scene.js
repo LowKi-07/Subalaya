@@ -6,7 +6,7 @@ const fs = require('fs');
   const b = await chromium.launch({ args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
   const p = await b.newPage({ viewport: { width: 320, height: 240 } });
   p.on('pageerror', (e) => console.log('ERR', e.message));
-  await p.goto('http://localhost:8766/index.html?lowq&noao');
+  await p.goto('http://localhost:8766/index.html?lowq&noao&nobake');
   await p.waitForFunction(() => window.walkthrough, null, { timeout: 120000 });
   await p.evaluate(() => walkthrough.modelsReady()); await p.waitForTimeout(6000);
   const b64 = await p.evaluate(async () => {

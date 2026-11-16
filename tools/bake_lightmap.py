@@ -61,7 +61,7 @@ bpy.context.view_layer.objects.active = targets[0]
 bpy.ops.object.mode_set(mode='EDIT')
 bpy.ops.mesh.select_all(action='SELECT')
 bpy.ops.uv.smart_project(angle_limit=math.radians(60), island_margin=0.0, area_weight=0.0, correct_aspect=True, scale_to_bounds=False)
-bpy.ops.uv.pack_islands(margin=3.0 / SIZE, rotate=True)
+bpy.ops.uv.pack_islands(margin=10.0 / SIZE, rotate=True)  # wide gaps so the denoiser never mixes neighbouring surfaces
 bpy.ops.object.mode_set(mode='OBJECT')
 print('unwrapped', round(time.time() - t0), 's')
 img = bpy.data.images.new('LM', SIZE, SIZE, alpha=False, float_buffer=True)
@@ -69,7 +69,7 @@ for m in {s.material for o in targets for s in o.material_slots if s.material}:
     m.use_nodes = True
     n = m.node_tree.nodes.new('ShaderNodeTexImage'); n.image = img
     m.node_tree.nodes.active = n
-sc.render.bake.margin = 8
+sc.render.bake.margin = 0  # padding is added after denoising instead
 sc.render.bake.use_clear = True
 bpy.ops.object.bake(type='DIFFUSE', pass_filter={'DIRECT', 'INDIRECT'})
 print('baked', round(time.time() - t0), 's')
