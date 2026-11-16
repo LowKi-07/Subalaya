@@ -35,7 +35,9 @@ const rnd = () => { seed = (seed + 0x6D2B79F5) | 0; let t = Math.imul(seed ^ (se
 // ---------------------------------------------------------------- renderer
 const canvas = document.getElementById('c');
 const isTouch = matchMedia('(pointer: coarse)').matches;
-const LOWQ = new URLSearchParams(location.search).has('lowq');
+const params = new URLSearchParams(location.search), params_has = (k) => params.has(k);
+const LOWQ = params.has('lowq');
+const LM_GAIN = parseFloat(params.get('lm') || '1.3');
 let renderer;
 try { renderer = new THREE.WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true }); }
 catch (e) { document.getElementById('loading').textContent = 'WebGL is not available in this browser.'; throw e; }
@@ -971,6 +973,7 @@ function setNight(v) {
   mats.lamp.emissiveIntensity = v ? 1.0 : 0.18;
   mats.facadeLight.emissiveIntensity = v ? 2.5 : 0.6;
   for (const m of litMaterials) m.emissiveIntensity = v ? 1.4 : 0;
+  applyBaked();
   document.getElementById('bNight').classList.toggle('on', v);
   document.getElementById('bNight').textContent = v ? 'Day' : 'Night';
 }
@@ -1039,7 +1042,7 @@ for (const [px, py] of [[70, 980], [230, 980], [70, 700], [480, 300]]) model('po
   const tl = new THREE.TextureLoader();
   const pbr = (name, tileFt, mat, rough = 1) => {
     const set = (t, srgb) => { t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = renderer.capabilities.getMaxAnisotropy(); if (srgb) t.colorSpace = THREE.SRGBColorSpace; return t; };
-    tl.load(`./textures/${name}_diff.jpg`, (t) => { mat.map = set(t, true); mat.color.set(0xffffff); mat.needsUpdate = true; });
+    tl.load(`./textures/${name}_diff.jpg`, (t) => { mat.map = set(t, true); mat.color.set(0xffffff); mat.needsUpdate = true; applyBaked(); });
     tl.load(`./textures/${name}_nor.jpg`, (t) => { mat.normalMap = set(t); mat.normalScale.set(0.8, 0.8); mat.bumpMap = null; mat.needsUpdate = true; });
     tl.load(`./textures/${name}_rough.jpg`, (t) => { mat.roughnessMap = set(t); mat.roughness = rough; mat.needsUpdate = true; });
     mat.userData.tile = tileFt;
@@ -1057,9 +1060,39 @@ new RGBELoader().load('./textures/sky_2k.hdr', (hdr) => {
   if (!night) scene.background = hdr;
 });
 
+// ---------------------------------------------------------------- baked lighting (Blender / Cycles)
+// tools/bake_lightmap.py path-traces the lighting for an area and stores it in a lightmap.
+// Baked meshes swap to an unlit material that shows albedo × lightmap; night mode swaps back.
+const bakedMeshes = [];
+function applyBaked() {
+  for (const t of bakedMeshes) {
+    const s = t.userData.lit, b = t.userData.baked;
+    if (b.map !== s.map) { b.map = s.map; b.needsUpdate = true; }
+    b.color.copy(s.color);
+    t.material = night ? s : b;
+  }
+}
+if (!params_has('nobake')) Promise.all([gltf.loadAsync('./baked/L0.glb'), new THREE.TextureLoader().loadAsync('./baked/L0_lm.jpg')]).then(([g, lm]) => {
+  lm.flipY = false; lm.channel = 1; lm.colorSpace = THREE.SRGBColorSpace; lm.anisotropy = 4;
+  const parts = []; g.scene.traverse((o) => { if (o.isMesh) parts.push(o); });
+  for (const o of parts) {
+    const rest = o.name.endsWith('_rest'), t = groups[0].getObjectByName(rest ? o.name.slice(0, -5) : o.name);
+    if (!t) continue;
+    if (rest) { // the part of this mesh outside the baked area keeps its normal lit material
+      const m = new THREE.Mesh(o.geometry, t.userData.lit || t.material); m.castShadow = t.castShadow; m.receiveShadow = t.receiveShadow; m.frustumCulled = false;
+      groups[0].add(m); continue;
+    }
+    const src = t.material;
+    t.geometry.dispose(); t.geometry = o.geometry;
+    t.userData.lit = src;
+    t.userData.baked = new THREE.MeshBasicMaterial({ color: src.color.clone(), map: src.map, lightMap: lm, lightMapIntensity: Math.PI * 3.0 * LM_GAIN, side: src.side });
+    bakedMeshes.push(t);
+  }
+  applyBaked();
+}).catch((e) => console.warn('baked lighting', e));
+
 // ---------------------------------------------------------------- post-processing
 // Ground-truth ambient occlusion gives soft contact shadows in corners and under furniture.
-const params = new URLSearchParams(location.search);
 const AO_ON = (params.has('ao') || !LOWQ) && !params.has('noao');
 const composer = new EffectComposer(renderer, new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: isTouch ? 0 : 4 }));
 composer.addPass(new RenderPass(scene, camera));
@@ -1074,7 +1107,7 @@ if (isTouch) composer.addPass(new SMAAPass(1, 1));
 
 // ---------------------------------------------------------------- merge static geometry
 // Thousands of small meshes become one draw call per material, which keeps phones smooth.
-function mergeStatic(root) {
+function mergeStatic(root, tag) {
   root.updateMatrixWorld(true);
   const buckets = new Map(), remove = [];
   const add = (o, mat, g) => {
@@ -1110,10 +1143,15 @@ function mergeStatic(root) {
     b.geos.forEach((g) => g.dispose());
     if (!merged) continue;
     const m = new THREE.Mesh(merged, b.mat); m.castShadow = b.cast; m.receiveShadow = b.recv; m.renderOrder = b.order; m.frustumCulled = false;
+    // name each merged mesh so Blender bakes can be matched back; "_b" marks plain matte surfaces worth baking
+    const mt = b.mat, lum = mt.emissive ? (mt.emissive.r + mt.emissive.g + mt.emissive.b) * (mt.emissiveIntensity ?? 1) : 1;
+    const bakeable = mt.isMeshStandardMaterial && !mt.isMeshPhysicalMaterial && !mt.transparent && !mt.alphaTest && mt.metalness < 0.3 && lum === 0;
+    m.name = `${tag}_${mergeCount++}${bakeable ? '_b' : ''}`;
     root.add(m);
   }
 }
-for (const g of [...groups, roofGroup, siteGroup]) mergeStatic(g);
+let mergeCount = 0;
+[...groups, roofGroup, siteGroup].forEach((g, i) => mergeStatic(g, ['L0', 'L1', 'ROOF', 'SITE'][i]));
 
 // ---------------------------------------------------------------- room labels (overview)
 const seenLabels = new Set();
@@ -1320,5 +1358,5 @@ requestAnimationFrame(() => { $('loading').style.display = 'none'; });
 frame();
 
 // hooks for automated screenshots / debugging
-window.walkthrough = { renderer, scene, step, groundAt, X, Z, teleport, setMode, setView, setNight, player, rooms: roomMenu, camera, orbit,
+window.walkthrough = { THREE, groups, roofGroup, siteGroup, modelsReady: () => Promise.all(Object.values(modelCache)), renderer, scene, step, groundAt, X, Z, teleport, setMode, setView, setNight, player, rooms: roomMenu, camera, orbit,
   look(x, z, h, yaw, pitch) { setMode('walk'); Object.assign(player, { x, z, h, yaw, pitch }); camH = h + EYE; } };

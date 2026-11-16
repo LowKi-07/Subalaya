@@ -34,6 +34,22 @@ Then open http://localhost:8000. To deploy, import the repo into Vercel or Netli
 
 Static meshes are merged by material at load time, which brings it to about 150 draw calls so it runs smoothly on phones. Ambient occlusion (GTAO) and anti-aliasing run as a post-processing pass. Add `?noao` to the URL to turn ambient occlusion off on slow devices, or `?lowq` for smaller shadow maps.
 
+## Blender lighting (trial: ground-floor living hall and kitchen)
+
+The lighting for the ground-floor living hall and kitchen is path-traced in Blender (Cycles) and stored in `baked/L0_lm.jpg`, with matching geometry in `baked/L0.glb`. The walkthrough shows it in day mode and falls back to live lighting at night. Add `?nobake` to the URL to turn it off. `renders/` holds photoreal stills.
+
+The bake must be redone whenever the baked area's walls or furniture change, otherwise the stored shadows no longer match:
+
+```bash
+python3 -m http.server 8766 &
+node tools/export-scene.js scene.glb
+python3 tools/bake_lightmap.py scene.glb textures/sky_2k.hdr baked L0 2048 64 0.3 0.5 11.2 24.7
+python3 tools/denoise_lightmap.py baked/L0_lm_raw.npy baked/L0_lm.jpg
+python3 tools/render_still.py scene.glb textures/sky_2k.hdr renders/living-hall.png 8.5 5.3 23.3 0.35 -0.12
+```
+
+This needs `pip install bpy oidn pillow numpy` and Playwright. The bake takes about 11 minutes on 4 CPU cores.
+
 ## Assets
 
 Scanned models, floor textures and the sky photo are from [Poly Haven](https://polyhaven.com) (CC0, free to use). They're packed to GLB with meshopt and WebP textures in `models/`, with the floor textures and HDR sky in `textures/`:
