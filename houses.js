@@ -29,7 +29,7 @@ export function buildNeighbourhood({ group, colliders, envMap, litMaterials }) {
   };
 
   // face: +1 = street at +z, -1 = street at -z
-  function house(x1, x2, z1, z2, floors, face, pi) {
+  function house(x1, x2, z1, z2, floors, face, pi, stairAt) { // stairAt: 'left' pins the roof stair block to the far-left
     const [wall, accent] = mats[pi % mats.length];
     const w = x2 - x1, cx = (x1 + x2) / 2;
     const fz = face > 0 ? z2 : z1;              // street-side edge of the plot
@@ -45,7 +45,7 @@ export function buildNeighbourhood({ group, colliders, envMap, litMaterials }) {
     box(w - 3, 3, 0.5, wall, cx, H + 1.5, (face > 0 ? bz1 : bz2) + face * 0.25);
     box(0.5, 3, d, wall, x1 + 1.75, H + 1.5, bcz); box(0.5, 3, d, wall, x2 - 1.75, H + 1.5, bcz);
     // stair headroom + water tank on the roof (very common on Indian terraces)
-    const mx = r() < 0.5 ? x1 + 7 : x2 - 7;
+    const mxRand = r() < 0.5 ? x1 + 7 : x2 - 7, mx = stairAt === 'left' ? x1 + 7 : mxRand;
     box(9, 8, 10, wall, mx, H + 4, bcz - face * (d / 2 - 7));
     const tank = new THREE.Mesh(new THREE.CylinderGeometry(1.8, 1.8, 3.6, 18), tankMat);
     tank.position.set(mx, H + 9.8, bcz - face * (d / 2 - 7)); tank.castShadow = true; group.add(tank);

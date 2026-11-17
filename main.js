@@ -184,7 +184,7 @@ const mats = {
   chain: new THREE.MeshStandardMaterial({ map: TEX.chain, transparent: true, alphaTest: 0.3, side: THREE.DoubleSide, metalness: 0.6, roughness: 0.5 }),
 };
 const floorMat = {};
-for (const [k, tile] of Object.entries({ oak: 5.58, marble: 4.92, ktile: 4, btile: 2, paver: 4, grass: 16, asphalt: 12 })) {
+for (const [k, tile] of Object.entries({ oak: 5.58, marble: 7.05, ktile: 4, btile: 2, paver: 4, grass: 16, asphalt: 12 })) {
   floorMat[k] = new THREE.MeshStandardMaterial({ map: TEX[k], bumpMap: k === 'oak' ? TEX[k] : null, bumpScale: 0.4, roughness: k === 'marble' ? 0.3 : k === 'oak' ? 0.5 : 0.85, envMapIntensity: k === 'oak' || k === 'marble' ? 0.8 : 0.4 });
   floorMat[k].userData.tile = tile;
 }
@@ -645,7 +645,8 @@ const roadZ = Z(1041) + 6;
 
   // neighbours, trees and street lights
   const hood = buildNeighbourhood({ group: g, colliders: colliders[0], envMap: skyEnv, litMaterials });
-  // the two plots on the left are left empty so the lobby windows look onto open sky
+  // left neighbour: single storey, so the first-floor lobby windows look over its roof to open sky
+  hood.house(-32, -2.6, -2, 58, 1, 1, 0, 'left');
   hood.house(30.2, 60, -2, 58, 2, 1, 1);
   hood.house(61, 91, -2, 58, 3, 1, 3);
   hood.house(-94, -64.5, -2, 58, 2, 1, 5);
@@ -1048,7 +1049,7 @@ for (const [px, py] of [[70, 980], [230, 980], [70, 700], [480, 300]]) model('po
     mat.userData.tile = tileFt;
   };
   pbr('wood_floor', 5.58, floorMat.oak, 0.9);
-  pbr('marble_01', 4.92, floorMat.marble, 0.8);
+  pbr('patio_tiles', 7.05, floorMat.marble, 0.9); // owner-supplied Poly Haven patio tiles
 }
 // real walnut veneer on doors, frames and furniture; woven linen relief on upholstery
 {
@@ -1085,7 +1086,7 @@ function applyBaked() {
     t.material = night ? s : b;
   }
 }
-if (!params_has('nobake')) Promise.all([gltf.loadAsync('./baked/L0.glb'), new THREE.TextureLoader().loadAsync('./baked/L0_lm.jpg')]).then(([g, lm]) => {
+if (params_has('bake')) Promise.all([gltf.loadAsync('./baked/L0.glb'), new THREE.TextureLoader().loadAsync('./baked/L0_lm.jpg')]).then(([g, lm]) => {
   lm.flipY = false; lm.channel = 1; lm.colorSpace = THREE.SRGBColorSpace; lm.anisotropy = 4;
   const parts = []; g.scene.traverse((o) => { if (o.isMesh) parts.push(o); });
   for (const o of parts) {

@@ -36,7 +36,7 @@ Static meshes are merged by material at load time, which brings it to about 150 
 
 ## Blender lighting (trial: ground-floor living hall and kitchen)
 
-The lighting for the ground-floor living hall and kitchen is path-traced in Blender (Cycles) and stored in `baked/L0_lm.jpg`, with matching geometry in `baked/L0.glb`. The walkthrough shows it in day mode and falls back to live lighting at night. Add `?nobake` to the URL to turn it off. `renders/` holds photoreal stills.
+The lighting for the ground-floor living hall and kitchen is path-traced in Blender (Cycles) and stored in `baked/L0_lm.jpg`, with matching geometry in `baked/L0.glb`. It is off by default, because it still shows seams where wall sections meet. Add `?bake` to the URL to see it (day mode only). `renders/` holds photoreal stills.
 
 The bake must be redone whenever the baked area's walls or furniture change, otherwise the stored shadows no longer match:
 
@@ -55,7 +55,7 @@ This needs `pip install bpy oidn pillow numpy` and Playwright. The bake takes ab
 Scanned models, floor textures and the sky photo are from [Poly Haven](https://polyhaven.com) (CC0, free to use). They're packed to GLB with meshopt and WebP textures in `models/`, with the floor textures and HDR sky in `textures/`:
 
 - Models: side_table_01, modern_wooden_cabinet, ceramic_vase_01, ceramic_vase_03, modern_ceiling_lamp_01, mid_century_lounge_chair, potted_plant_02, potted_plant_04.
-- Textures: wood_floor, marble_01, black_walnut_veneer_01, rough_linen (normal map).
+- Textures: wood_floor, patio_tiles, black_walnut_veneer_01, rough_linen (normal map).
 - Sky: kloofendal_48d_partly_cloudy_puresky (2K HDR).
 
 Models from Sketchfab, supplied by the owner:
