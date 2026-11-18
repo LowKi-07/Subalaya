@@ -13,7 +13,7 @@ const fs = require('fs');
     const { GLTFExporter } = await import('/tools/GLTFExporter.js');
     const w = walkthrough, root = new w.THREE.Group();
     const parts = [...w.groups, w.roofGroup, w.siteGroup];
-    parts.forEach((g) => { g.visible = true; });
+    parts.forEach((g, i) => { g.visible = true; g.name = ['L0', 'L1', 'ROOF', 'SITE'][i]; });
     const buf = await new GLTFExporter().parseAsync(parts, { binary: true, onlyVisible: false });
     void root;
     let s = ''; const u = new Uint8Array(buf);

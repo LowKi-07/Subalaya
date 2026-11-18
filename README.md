@@ -50,6 +50,17 @@ python3 tools/render_still.py scene.glb textures/sky_2k.hdr renders/living-hall.
 
 This needs `pip install bpy oidn pillow numpy` and Playwright. The bake takes about 12 minutes on 4 CPU cores.
 
+## Blender file
+
+`blender/Subalaya.blend` is the whole house as a self-contained Blender scene, with textures and the sky packed in. It's set up for Cycles, with a sun, the HDR sky, an area light under each ceiling light, and eight cameras (street, living halls, kitchen, bedroom, lobby, terrace). Objects are grouped by floor. One Blender unit is one foot. On a Mac, set Render Properties → Device to GPU (Metal).
+
+To rebuild it after changes:
+
+```bash
+node tools/export-scene.js house.glb
+python3 tools/make_blend.py house.glb textures/sky_2k.hdr blender/Subalaya.blend
+```
+
 ## Assets
 
 Scanned models, floor textures and the sky photo are from [Poly Haven](https://polyhaven.com) (CC0, free to use). They're packed to GLB with meshopt and WebP textures in `models/`, with the floor textures and HDR sky in `textures/`:
